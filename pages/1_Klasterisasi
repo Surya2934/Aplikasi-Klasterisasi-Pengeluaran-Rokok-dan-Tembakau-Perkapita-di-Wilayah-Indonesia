@@ -1,0 +1,387 @@
+import streamlit as st
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import RobustScaler
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score, davies_bouldin_score,  pairwise_distances_argmin_min
+from sklearn.decomposition import PCA
+import time
+import numpy as np
+import geopandas as gpd 
+
+# --- Import kode K-Means++ Manual ---
+try:
+    from k_means_plus_plus import KMeansPlusPlusManual
+except ImportError:
+    st.error("File 'k_means_plus_plus.py' tidak ditemukan.")
+    KMeansPlusPlusManual = None
+
+# --- KONFIGURASI HALAMAN ---
+st.set_page_config(page_title="Analisis Utama", layout="wide")
+
+# --- FUNGSI-FUNGSI UTAMA ---
+@st.cache_data
+def load_data(file_path):
+    try:
+        df = pd.read_csv(file_path)
+        if 'Kabupaten/Kota' in df.columns and 'Tahun' in df.columns:
+            df.drop_duplicates(subset=['Kabupaten/Kota', 'Tahun'], keep='first', inplace=True)
+        return df
+    except FileNotFoundError:
+        st.error(f"Error: File '{file_path}' tidak ditemukan.")
+        return None
+    except Exception as e:
+        st.error(f"Error: Gagal memuat file '{file_path}'. Detail: {e}")
+        return None
+
+@st.cache_data
+def load_geodata(file_path):
+    try:
+        gdf = gpd.read_file(file_path)
+        return gdf
+    except Exception as e:
+        st.error(f"Error: Gagal memuat file GeoJSON '{file_path}'. Detail: {e}")
+        return None
+
+def run_clustering(df, k, selected_features, algorithm_choice):
+    if not selected_features:
+        st.error("Harap pilih setidaknya satu fitur.")
+        return None, None, None, None, None
+    
+    df_cluster = df.copy()
+    df_cluster[selected_features] = df_cluster[selected_features].fillna(0)
+    scaler = RobustScaler()
+    X_scaled = scaler.fit_transform(df_cluster[selected_features])
+
+    model = None
+    if algorithm_choice == 'K-Means++':
+        if KMeansPlusPlusManual:
+            model = KMeansPlusPlusManual(n_clusters=k, random_state=42)
+    else: # K-Means
+        model = KMeans(n_clusters=k, init='random', n_init=10, random_state=42)
+    
+    if model is None:
+        st.error("Gagal menginisialisasi model klasterisasi.")
+        return None, None, None, None, None
+        
+    df_cluster['Cluster'] = model.fit_predict(X_scaled)
+    sil_score = silhouette_score(X_scaled, df_cluster['Cluster'])
+    dbi_score = davies_bouldin_score(X_scaled, df_cluster['Cluster'])
+    
+    return df_cluster, sil_score, dbi_score, X_scaled, model
+
+# --- TAMPILAN HALAMAN UTAMA ---
+st.title("Halaman Analisis Utama Klasterisasi 🔬")
+
+# --- BAGIAN INPUT ---
+st.header("1. Pengaturan Analisis")
+col1, col2, col3 = st.columns(3)
+with col1:
+    algo_choice = st.radio("Pilih Algoritma:", ('K-Means', 'K-Means++'))
+with col2:
+    all_features = ['Rokok kretek filter', 'Rokok kretek tanpa filter', 'Rokok putih', 'Tembakau', 'Rokok dan tembakau Lainnya']
+    selected_features = st.multiselect("Pilih Fitur Analisis:", options=all_features, default=all_features)
+with col3:
+    start_year, end_year = st.slider("Pilih Rentang Tahun:", 2018, 2024, (2018, 2024))
+    selected_years = list(range(start_year, end_year + 1))
+
+st.markdown("---")
+
+# --- BAGIAN EVALUASI K ---
+st.header("2. Penentuan K Optimal")
+if st.button("Tampilkan Grafik Evaluasi K"):
+    df_rokok_eval = load_data('dataset_rokok.csv')
+    if df_rokok_eval is not None and selected_features:
+        with st.spinner('Mengevaluasi K dari 2-10...'):
+            df_filtered_eval = df_rokok_eval[df_rokok_eval['Tahun'].isin(selected_years)].copy()
+            df_filtered_eval[selected_features] = df_filtered_eval[selected_features].fillna(0)
+            scaler = RobustScaler()
+            X_scaled_eval = scaler.fit_transform(df_filtered_eval[selected_features])
+            k_range = range(2, 11)
+            scores_sklearn = []
+            scores_manual = []
+            for k in k_range:
+                km_sklearn = KMeans(n_clusters=k, init='random', n_init=10, random_state=42)
+                scores_sklearn.append(silhouette_score(X_scaled_eval, km_sklearn.fit_predict(X_scaled_eval)))
+                if KMeansPlusPlusManual:
+                    km_manual = KMeansPlusPlusManual(n_clusters=k, random_state=42)
+                    scores_manual.append(silhouette_score(X_scaled_eval, km_manual.fit_predict(X_scaled_eval)))
+            fig, ax = plt.subplots(figsize=(10, 5))
+            ax.plot(k_range, scores_sklearn, marker='o', linestyle='--', label='K-Means')
+            if scores_manual:
+                ax.plot(k_range, scores_manual, marker='x', linestyle=':', label='K-Means++')
+            ax.set_xlabel("Jumlah Klaster (K)")
+            ax.set_ylabel("Silhouette Score")
+            ax.set_title("Perbandingan Silhouette Score")
+            ax.legend()
+            ax.grid(True)
+            st.pyplot(fig)
+            st.info("Nilai K terbaik adalah yang memiliki Silhouette Score tertinggi.")
+    else:
+        st.warning("Pastikan dataset `dataset_rokok.csv` ada dan setidaknya satu fitur dipilih.")
+
+st.markdown("---")
+
+# --- BAGIAN PROSES & HASIL ---
+st.header("3. Klasterisasi")
+k_value = st.slider("Pilih Jumlah Klaster (K) untuk Dijalankan:", 2, 10, 3)
+
+if st.button("🚀 Proses Klasterisasi", type="primary"):
+    df_rokok = load_data('dataset_rokok.csv')
+    if df_rokok is not None and selected_features:
+        with st.spinner('Melakukan analisis...'):
+            df_filtered = df_rokok[df_rokok['Tahun'].isin(selected_years)].copy()
+            start_time = time.time()
+            df_result, sil_score, dbi_score, X_scaled, model = run_clustering(df_filtered, k_value, selected_features, algo_choice)
+            runtime = time.time() - start_time
+            if df_result is not None:
+                df_tambahan = load_data('dataset_tambahan.csv')
+                if df_tambahan is not None:
+                    df_tambahan['Tahun'] = df_tambahan['Tahun'].astype(int)
+                    df_result['Tahun'] = df_result['Tahun'].astype(int)
+                    df_final = pd.merge(df_result, df_tambahan, on=['Kabupaten/Kota', 'Tahun'], how='left')
+                    st.session_state['df_final'] = df_final
+                else:
+                    st.session_state['df_final'] = df_result
+                st.session_state['results_info'] = {
+                    'sil': sil_score, 'dbi': dbi_score, 'runtime': runtime, 
+                    'k': k_value, 'X_scaled': X_scaled, 'model': model,
+                    'df_filtered': df_filtered,
+                    'selected_features_run': selected_features # <-- Simpan fitur yang digunakan
+                }
+                st.success("Analisis selesai!")
+    else:
+        st.warning("Pastikan dataset `dataset_rokok.csv` ada dan setidaknya satu fitur dipilih.")
+
+if 'df_final' in st.session_state:
+    results = st.session_state.get('results_info', {})
+    df_final = st.session_state.get('df_final')
+
+    if not results or df_final is None:
+        st.warning("Hasil analisis tidak lengkap. Silakan jalankan kembali proses klasterisasi.")
+        st.stop()
+
+    model = results.get('model')
+    X_scaled_result = results.get('X_scaled')
+    df_filtered_result = results.get('df_filtered')
+    # --- PERBAIKAN: Gunakan fitur yang tersimpan, bukan yang live ---
+    features_run = results.get('selected_features_run', [])
+
+    if model is None or X_scaled_result is None or df_filtered_result is None or not features_run:
+        st.warning("Informasi hasil analisis tidak lengkap. Jalankan ulang proses klasterisasi.")
+        st.stop()
+
+
+    st.header("📈 Hasil Analisis")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Silhouette Score", f"{results.get('sil', 0):.4f}")
+    col2.metric("Davies-Bouldin Index", f"{results.get('dbi', 0):.4f}")
+    col3.metric("Waktu Proses", f"{results.get('runtime', 0):.2f} detik")
+
+    st.subheader("Informasi Detail Klaster")
+    st.write(f"Hasil untuk K = {results.get('k', 'N/A')}")
+    with st.expander("Klik untuk melihat detail"):
+        st.write("**Statistik Rata-rata per Klaster:**")
+        
+        agg_dict = {'ROKOK DAN TEMBAKAU': 'mean'}
+        rename_dict = {'ROKOK DAN TEMBAKAU': 'Rata-rata Total Pengeluaran Rokok'}
+        if 'IPM' in df_final.columns: agg_dict['IPM'] = 'mean'; rename_dict['IPM'] = 'Rata-rata IPM'
+        if 'Persentase_Miskin' in df_final.columns: agg_dict['Persentase_Miskin'] = 'mean'; rename_dict['Persentase_Miskin'] = 'Rata-rata Kemiskinan (%)'
+
+        profiling_data = df_final.groupby('Cluster').agg(agg_dict).rename(columns=rename_dict)
+        st.dataframe(profiling_data.style.format("{:.2f}"))
+
+        st.write("**Informasi Teknis Model:**")
+        if hasattr(model, 'n_iter_'):
+            st.write(f"- Jumlah Iterasi yang Dibutuhkan: **{model.n_iter_}**")
+
+        if hasattr(model, 'initial_centroid_indices_'):
+            st.write("- **Centroid Awal** yang Terpilih (Data Asli):")
+            initial_indices = model.initial_centroid_indices_
+            df_filtered = df_filtered_result.reset_index(drop=True)
+            initial_centroids_df = df_filtered.iloc[initial_indices][['Kabupaten/Kota', 'Tahun']]
+            st.dataframe(initial_centroids_df)
+        elif hasattr(model, 'cluster_centers_'):
+            st.write("- **Data Asli Paling Dekat dengan Centroid Akhir** (Perwakilan Klaster):")
+            final_centroids = model.cluster_centers_
+            closest_indices, _ = pairwise_distances_argmin_min(final_centroids, X_scaled_result)
+            df_filtered = df_filtered_result.reset_index(drop=True)
+            representative_points_df = df_filtered.iloc[closest_indices][['Kabupaten/Kota', 'Tahun']]
+            st.dataframe(representative_points_df)
+
+        st.write("- Posisi Centroid Terakhir (dalam data yang sudah diskalakan):")
+        if hasattr(model, 'centroids'):
+            centroids_final = model.centroids
+            st.dataframe(pd.DataFrame(centroids_final, columns=features_run).style.format("{:.4f}"))
+        elif hasattr(model, 'cluster_centers_'):
+            centroids_final = model.cluster_centers_
+            st.dataframe(pd.DataFrame(centroids_final, columns=features_run).style.format("{:.4f}"))
+    
+    st.subheader(f"Tabel Data Hasil Klasterisasi")
+    with st.expander("Klik untuk melihat detail"):
+        if 'Provinsi' in df_final.columns:
+            # --- PERBAIKAN ERROR TypeError ---
+            # Membersihkan daftar provinsi dari nilai non-string (seperti NaN) sebelum diurutkan
+            provinsi_list = [prov for prov in df_final['Provinsi'].unique().tolist() if isinstance(prov, str)]
+            all_provinces = ['Semua Provinsi'] + sorted(provinsi_list)
+            
+            selected_province = st.selectbox("Filter berdasarkan Provinsi:", options=all_provinces)
+            
+            if selected_province == 'Semua Provinsi':
+                st.dataframe(df_final)
+            else:
+                st.dataframe(df_final[df_final['Provinsi'] == selected_province])
+        else:
+            st.warning("Kolom 'Provinsi' tidak ditemukan setelah penggabungan data. Menampilkan seluruh data.")
+            
+
+            st.dataframe(df_final)
+    
+    # --- 2. GRAFIK DENGAN PENJELASAN ---
+    st.subheader("VISUALISASI")
+
+    # Distribusi Klaster
+    st.write("**Distribusi Anggota per Klaster**")
+    with st.expander("Klik untuk melihat detail"):
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            fig1, ax1 = plt.subplots(figsize=(8, 4))
+            sns.countplot(x='Cluster', data=df_final, ax=ax1, palette='viridis', order=sorted(df_final['Cluster'].unique()))
+            st.pyplot(fig1)
+        with col2:
+            st.write("**Penjelasan Grafik:**")
+            st.info("Grafik ini menunjukkan jumlah total data point (kabupaten/kota per tahun) untuk setiap klaster yang terbentuk.")
+            cluster_counts = df_final['Cluster'].value_counts().sort_index()
+            for i, count in cluster_counts.items():
+                st.write(f"- Klaster {i}: **{count}** anggota")
+
+
+    # Scatter Plot (PCA)
+    st.write("**Visualisasi Sebaran Klaster**")
+    with st.expander("Klik untuk melihat detail"):
+        # --- PERBAIKAN: Logika Kondisional untuk PCA ---
+        if len(features_run) > 1:
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                pca = PCA(n_components=2)
+                principal_components = pca.fit_transform(X_scaled_result)
+                pca_df = pd.DataFrame(data=principal_components, columns=['PC1', 'PC2'])
+                pca_df['Cluster'] = df_final['Cluster'].values
+                fig3, ax3 = plt.subplots(figsize=(7, 5))
+                sns.scatterplot(x='PC1', y='PC2', hue='Cluster', palette='viridis', data=pca_df, ax=ax3, alpha=0.7)
+                st.pyplot(fig3)
+            with col2:
+                st.write("**Penjelasan Grafik:**")
+                st.info("Grafik ini adalah representasi 2D dari data multidimensi Anda untuk melihat seberapa baik klaster-klaster terpisah secara visual.")
+        else:
+            st.warning("Visualisasi Sebaran Klaster tidak dapat ditampilkan karena hanya 1 fitur yang dipilih. Harap pilih minimal 2 fitur untuk analisis ini.")
+
+    # Profil Klaster (Pengeluaran)
+    st.write("**Profil Karakteristik Klaster**")
+    with st.expander("Klik untuk melihat detail"):
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            fig2, ax2 = plt.subplots(figsize=(8, 5))
+            df_melted = df_final.melt(id_vars=['Cluster'], value_vars=selected_features, var_name='Jenis Rokok', value_name='Nilai Pengeluaran (IDR)')
+            sns.boxplot(x='Jenis Rokok', y='Nilai Pengeluaran (IDR)', hue='Cluster', data=df_melted, ax=ax2, palette='viridis')
+            plt.xticks(rotation=45, ha='right')
+            st.pyplot(fig2)
+        with col2:
+            st.write("**Cara Membaca Boxplot:**")
+            st.info("""
+            - **Garis Tengah:** Median (nilai tengah).
+            - **Badan Kotak:** Rentang Interkuartil (IQR), di mana 50% data utama berada.
+            - **Garis "Kumis":** Rentang data di luar IQR yang masih dianggap wajar.
+            - **Titik-titik:** Outlier (pencilan), yaitu data yang nilainya sangat ekstrem.
+            """)
+
+        # --- 3. BOXPLOT BARU (IPM & Kemiskinan) ---
+        col1, col2 = st.columns(2)
+        with col1:
+            if 'IPM' in df_final.columns:
+                fig_ipm, ax_ipm = plt.subplots(figsize=(6, 4))
+                sns.boxplot(x='Cluster', y='IPM', data=df_final, ax=ax_ipm, palette='viridis')
+                ax_ipm.set_title("Boxplot IPM")
+                st.pyplot(fig_ipm)
+            else:
+                st.warning("Kolom 'IPM' tidak ditemukan di data tambahan.")
+        with col2:
+            if 'Persentase_Miskin' in df_final.columns:
+                fig_pov, ax_pov = plt.subplots(figsize=(6, 4))
+                sns.boxplot(x='Cluster', y='Persentase_Miskin', data=df_final, ax=ax_pov, palette='viridis')
+                ax_pov.set_title("Boxplot Tingkat Kemiskinan")
+                ax_pov.set_ylabel("Persentase Penduduk Miskin (%)")
+                st.pyplot(fig_pov)
+            else:
+                st.warning("Kolom 'Tingkat Kemiskinan' tidak ditemukan di data tambahan.")
+
+    st.write("**Pemetaan Geografis Hasil Klasterisasi**")
+    with st.expander("Klik untuk melihat detail"):
+        # --- PERBAIKAN ERROR StreamlitAPIException ---
+        min_map_year = int(df_final['Tahun'].min())
+        max_map_year = int(df_final['Tahun'].max())
+        
+        map_year = 0
+        if min_map_year >= max_map_year:
+            map_year = min_map_year
+            st.info(f"Hanya menampilkan peta untuk satu tahun yang tersedia: {map_year}")
+        else:
+            map_year = st.slider("Pilih Tahun untuk Peta:", min_map_year, max_map_year, max_map_year)
+
+        with st.spinner("Memuat data peta dan membuat visualisasi..."):
+            geojson_path = 'Peta Indonesia Kota Kabupaten simplified.json'
+            peta_indo = load_geodata(geojson_path)
+            if peta_indo is not None:
+                df_peta = df_final[df_final['Tahun'] == map_year]
+                if 'NAME_2' in peta_indo.columns:
+                    peta_indo['merge_key'] = peta_indo['NAME_2'].str.upper()
+                    df_peta['merge_key'] = df_peta['Kabupaten/Kota'].str.upper()
+                    peta_merged = peta_indo.merge(df_peta, on='merge_key', how='left')
+                    fig, ax = plt.subplots(1, 1, figsize=(20, 10))
+                    peta_merged.plot(column='Cluster', categorical=True, legend=True,
+                                    cmap='viridis', linewidth=0.5, edgecolor='0.8',
+                                    missing_kwds={"color": "lightgrey", "label": "Tidak Ada Data"},
+                                    ax=ax)
+                    ax.set_title(f'Peta Klasterisasi Pengeluaran Rokok per Kab/Kota - Tahun {map_year}', fontsize=16)
+                    ax.set_axis_off()
+                    st.pyplot(fig)
+                else:
+                    st.error("Kolom 'NAME_2' tidak ditemukan di file GeoJSON.")
+            else:
+                st.error("Gagal membuat peta karena file GeoJSON tidak dapat dimuat.")
+
+    st.write("**Top 10 Daerah dengan Pengeluaran Tertinggi**")
+    with st.expander("Klik untuk melihat detail"):
+        color_palette = sns.color_palette('viridis', n_colors=results.get('k', 1))
+        
+        for year in sorted(df_final['Tahun'].unique()):
+            with st.expander(f"Tahun {year}"):
+                df_year = df_final[df_final['Tahun'] == year]
+                
+                for feature in selected_features:
+                    st.write(f"**{feature}**")
+                    
+                    top_10_df = df_year.nlargest(10, feature)
+                    
+                    if not top_10_df.empty:
+                        fig, ax = plt.subplots(figsize=(10, 6))
+                        # Gunakan .set_index agar nama daerah tidak tercampur saat plotting
+                        plot_df = top_10_df.set_index('Kabupaten/Kota')
+                        # Buat palet warna yang sesuai dengan klaster
+                        hue_order = sorted(plot_df['Cluster'].unique())
+                        palette = {cluster: color_palette[cluster] for cluster in hue_order}
+
+                        sns.barplot(data=plot_df, x=plot_df.index, y=feature, hue='Cluster', palette=palette, ax=ax, dodge=False)
+                        
+                        ax.set_title(f'Top 10 Pengeluaran Tertinggi untuk {feature} - {year}')
+                        ax.set_xlabel("Kabupaten/Kota")
+                        ax.set_ylabel("Nilai Pengeluaran")
+                        plt.xticks(rotation=45, ha='right')
+                        ax.legend(title='Klaster')
+                        st.pyplot(fig)
+                    else:
+                        st.write("Tidak ada data untuk ditampilkan.")
+
+
+    

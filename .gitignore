@@ -1,0 +1,17 @@
+# Lingkungan Virtual
+venv/
+.venv/
+env/
+ENV/
+
+# Cache Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# File Editor/OS
+.vscode/
+.idea/
+*.DS_Store
+Thumbs.db
