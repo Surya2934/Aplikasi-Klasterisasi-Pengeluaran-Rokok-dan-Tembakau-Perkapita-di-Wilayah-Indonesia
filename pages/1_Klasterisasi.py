@@ -69,7 +69,7 @@ def run_clustering(df, selected_features, algorithm_choice, params):
     elif algorithm_choice == 'K-Means':
         model = KMeans(n_clusters=params['k'], init='random', n_init=10, random_state=42)
     elif algorithm_choice == 'OPTICS':
-        model = OPTICS(min_samples=params['min_samples'], xi=0.05, min_cluster_size=5)
+        model = OPTICS(min_samples=params['min_samples'], xi=0.05, min_cluster_size=15)
 
     if model is None:
         st.error("Gagal menginisialisasi model klasterisasi.")
@@ -129,7 +129,7 @@ if 'df_analysis' in st.session_state:
 
     # --- BAGIAN INPUT ---
     st.header("Pengaturan Analisis")
-    st.write("Pilihlah algoritma dan fitur sesuai keingingan anda")
+    st.write("Pilihlah algoritma dan fitur sesuai keinginan anda")
     col1, col2, col3 = st.columns(3)
     with col1:
         algo_choice = st.radio("Pilih Algoritma:", ('K-Means', 'K-Means++', 'OPTICS'))

@@ -1,20 +1,17 @@
 import numpy as np
 
 class KMeansPlusPlusManual:
-    """
-    Implementasi manual dari algoritma K-Means++ dari nol.
-    """
+
     def __init__(self, n_clusters=3, max_iter=300, random_state=None):
         self.n_clusters = n_clusters
         self.max_iter = max_iter
         self.random_state = random_state
-        self.centroids = None # Akan berisi centroid akhir (numerik)
+        self.centroids = None
         self.labels_ = None
         self.n_iter_ = 0
-        self.initial_centroid_indices_ = [] # Menyimpan indeks data asli yang menjadi centroid awal
+        self.initial_centroid_indices_ = []
 
     def _initialize_centroids(self, X):
-        """Inisialisasi centroid menggunakan metode K-Means++ dan simpan indeksnya."""
         if self.random_state is not None:
             np.random.seed(self.random_state)
         
@@ -44,7 +41,7 @@ class KMeansPlusPlusManual:
         return np.array(centroids)
 
     def fit_predict(self, X):
-        """Menjalankan algoritma K-Means++ dan mengembalikan label klaster."""
+        # Menjalankan algoritma K-Means++ dan mengembalikan label klaster.
         # Inisialisasi centroid dan simpan indeksnya
         initial_centroids = self._initialize_centroids(X)
         self.centroids = np.copy(initial_centroids)
