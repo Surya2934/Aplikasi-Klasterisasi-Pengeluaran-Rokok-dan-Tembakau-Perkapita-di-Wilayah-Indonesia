@@ -566,10 +566,8 @@ if 'df_final' in st.session_state:
                         title='OPTICS Reachability Plot'
                     )
                     
-                    # Sembunyikan gap antar bar agar terlihat seperti plot matplotlib
-                    fig_reach.update_layout(bargap=0) 
                     # Sembunyikan legend (terlalu ramai)
-                    fig_reach.update_layout(showlegend=False) 
+                    fig_reach.update_layout(showlegend=False, dragmode='pan') 
                     
                     st.plotly_chart(fig_reach, use_container_width=True)
             with col2:
@@ -581,7 +579,7 @@ if 'df_final' in st.session_state:
                 - **Bar Abu-abu:** Data *noise*.
                 """)
 
-    #Distribusi Klaster ()
+    #Distribusi Klaster
     st.write("**Distribusi Anggota per Klaster**")
     with st.expander("Klik untuk melihat detail"):
         col1, col2 = st.columns([2, 1])
@@ -600,7 +598,7 @@ if 'df_final' in st.session_state:
                              color_discrete_map=master_color_map,
                              title="Distribusi Anggota per Klaster"
                             )
-                fig1.update_layout(xaxis_title="Klaster", yaxis_title="Jumlah Kabupaten/Kota")
+                fig1.update_layout(xaxis_title="Klaster", yaxis_title="Jumlah Kabupaten/Kota", dragmode='pan')
                 st.plotly_chart(fig1, use_container_width=True)
             else:
                 st.warning("Data tidak ditemukan.")
@@ -650,7 +648,7 @@ if 'df_final' in st.session_state:
                                   "<extra></extra>" # Hapus info tambahan default
                 )
 
-                fig3.update_layout(legend_title_text='Klaster')
+                fig3.update_layout(legend_title_text='Klaster', dragmode='pan')
                 st.plotly_chart(fig3, use_container_width=True)
             
             elif X_scaled_agg is None or df_result_agg is None:
@@ -687,7 +685,7 @@ if 'df_final' in st.session_state:
                               color='Cluster_Label',
                               color_discrete_map=master_color_map,
                               title="Profil Karakteristik Klaster")
-                fig2_all.update_layout(legend_title_text='Klaster')
+                fig2_all.update_layout(legend_title_text='Klaster', dragmode='pan')
                 fig2_all.update_xaxes(tickangle=45)
                 st.plotly_chart(fig2_all, use_container_width=True)
             else:
@@ -709,7 +707,7 @@ if 'df_final' in st.session_state:
                                      color='Cluster_Label',
                                      color_discrete_map=master_color_map,
                                      title="Boxplot IPM per Klaster")
-                    fig_ipm_all.update_layout(xaxis_title="Klaster/Noise", showlegend=False)
+                    fig_ipm_all.update_layout(xaxis_title="Klaster/Noise", showlegend=False, dragmode='pan')
                     st.plotly_chart(fig_ipm_all, use_container_width=True)
                     st.info("Grafik perbandingan sebaran IPM.")
                 else:
@@ -723,7 +721,7 @@ if 'df_final' in st.session_state:
                                      color='Cluster_Label',
                                      color_discrete_map=master_color_map,
                                      title="Boxplot Kemiskinan per Klaster")
-                    fig_pov_all.update_layout(xaxis_title="Klaster/Noise", showlegend=False)
+                    fig_pov_all.update_layout(xaxis_title="Klaster/Noise", showlegend=False, dragmode='pan')
                     st.plotly_chart(fig_pov_all, use_container_width=True)
                     st.info("Grafik perbandingan sebaran kemiskinan.")
                 else:
@@ -917,7 +915,7 @@ if 'df_final' in st.session_state:
                                        markers=True,
                                        title='Rata-rata Total Pengeluaran Rokok per Klaster per Tahun')
                     
-                    fig_line.update_layout(yaxis_title='Rata-rata Pengeluaran', legend_title_text='Klaster')
+                    fig_line.update_layout(yaxis_title='Rata-rata Pengeluaran', legend_title_text='Klaster', dragmode='pan')
                     st.plotly_chart(fig_line, use_container_width=True)
                 else:
                     st.info("Tidak ada klaster valid untuk menampilkan tren tahunan.")
@@ -1018,7 +1016,8 @@ if 'df_final' in st.session_state:
                                         fig_line_daerah.update_layout(
                                             margin=dict(l=20, r=20, t=40, b=20),
                                             xaxis_title=None,
-                                            yaxis_title=None
+                                            yaxis_title=None,
+                                            dragmode='pan'
                                         )
                                         st.plotly_chart(fig_line_daerah, use_container_width=True)
 
@@ -1061,7 +1060,7 @@ if 'df_final' in st.session_state:
                                 hover_data=hover_cols
                             )
 
-                        fig_bar_top10.update_layout(xaxis_title="Kabupaten/Kota", yaxis_title="Nilai Pengeluaran")
+                        fig_bar_top10.update_layout(xaxis_title="Kabupaten/Kota", yaxis_title="Nilai Pengeluaran", dragmode='pan')
                         st.plotly_chart(fig_bar_top10, use_container_width=True)
 
 
