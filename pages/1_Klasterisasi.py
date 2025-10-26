@@ -31,16 +31,93 @@ with st.sidebar:
 # --- FUNGSI-FUNGSI UTAMA ---
 @st.cache_data
 def load_data(file_path):
+    df = None
+    is_uploaded_file = hasattr(file_path, 'seek')
+
     try:
-        df = pd.read_csv(file_path)
-        if 'Kabupaten/Kota' in df.columns and 'Tahun' in df.columns:
-            df.drop_duplicates(subset=['Kabupaten/Kota', 'Tahun'], keep='first', inplace=True)
-        return df
+        # --- Handle Uploaded Files ---
+        if is_uploaded_file:
+            filename = file_path.name.lower()
+            file_path.seek(0)
+
+            if filename.endswith('.xlsx'):
+                try:
+                    df = pd.read_excel(file_path, engine='openpyxl')
+                    st.info("Membaca file sebagai Excel (.xlsx).")
+                except Exception as e_excel:
+                    file_path.seek(0)
+                    pass
+            
+            # Jika bukan Excel atau Excel gagal, coba CSV
+            if df is None and (filename.endswith('.csv') or not filename.endswith('.xlsx')):
+                
+                # --- Upaya 1: Pemisah Titik Koma (;) ---
+                try:
+                    file_path.seek(0)
+                    df = pd.read_csv(file_path, delimiter=';')
+                except Exception as e_semi:
+                    df = None # Pastikan df adalah None jika gagal
+
+                # --- Upaya 2: Pemisah Koma (,) ---
+                # Coba koma JIKA upaya pertama gagal (df is None)
+                # ATAU JIKA upaya pertama 'berhasil' tapi hanya menghasilkan 1 kolom
+                if df is None or len(df.columns) <= 1:
+                    
+                    try:
+                        file_path.seek(0)
+                        df = pd.read_csv(file_path, delimiter=',') 
+
+                    except Exception as e_comma:
+                        df = None
+                        return None
+
+                # Peringatan terakhir jika masih 1 kolom (mungkin memang file 1 kolom)
+                if df is not None and len(df.columns) <= 1:
+                    st.warning("File CSV berhasil dimuat, tetapi tampaknya hanya memiliki satu kolom. Periksa kembali pemisah file Anda.")
+
+        # --- Handle File Paths (e.g., dataset bawaan) ---
+        else:
+            filename = str(file_path).lower()
+            if filename.endswith('.xlsx'):
+                try:
+                    df = pd.read_excel(filename, engine='openpyxl')
+                except Exception as e_excel:
+                    st.error(f"Gagal membaca file '{filename}' sebagai Excel. Error: {e_excel}")
+                    return None
+            elif filename.endswith('.csv'):
+                # Coba koma dulu (standar umum)
+                try:
+                    df = pd.read_csv(filename, delimiter=',')
+                except Exception:
+                    st.warning(f"Gagal membaca '{filename}' dengan ','. Mencoba ';'.")
+                    try:
+                        df = pd.read_csv(filename, delimiter=';')
+                    except Exception as e_csv:
+                        st.error(f"Gagal membaca file CSV '{filename}' dengan ',' atau ';'. Error: {e_csv}")
+                        return None
+                        
+                # Cek hasil bacaan file path juga
+                if df is not None and len(df.columns) <= 1:
+                    st.warning(f"File CSV '{filename}' dimuat, tetapi hanya memiliki satu kolom. Mungkin pemisahnya salah?")
+
+            else:
+                st.error(f"Format file '{filename}' tidak didukung (hanya .csv atau .xlsx).")
+                return None
+
+        # --- Post-processing (jika df berhasil dimuat) ---
+        if df is not None:
+            if 'Kabupaten/Kota' in df.columns and 'Tahun' in df.columns:
+                df.drop_duplicates(subset=['Kabupaten/Kota', 'Tahun'], keep='first', inplace=True)
+            return df
+        else:
+             st.error("Gagal memuat data dari file.")
+             return None
+
     except FileNotFoundError:
         st.error(f"Error: File '{file_path}' tidak ditemukan.")
         return None
     except Exception as e:
-        st.error(f"Error: Gagal memuat file '{file_path}'. Detail: {e}")
+        st.error(f"Error: Gagal memproses file. Detail: {e}")
         return None
 
 @st.cache_data
@@ -107,21 +184,57 @@ source_choice = st.radio(
     "Pilih sumber data untuk analisis:",
     ('Gunakan Dataset Bawaan Website', 'Unggah File Sendiri'),
     horizontal=True,
+    key='data_source_radio'
 )
+
+# Variabel flag untuk menandakan data valid
+data_is_valid = False
+temp_df_analysis = None # Tempat penyimpanan sementara
 
 if source_choice == 'Unggah File Sendiri':
     uploaded_file = st.file_uploader("Pilih file CSV atau Excel", type=['csv', 'xlsx'])
     if uploaded_file:
-        df_analysis = load_data(uploaded_file)
-        if df_analysis is not None:
-            st.session_state['df_analysis'] = df_analysis
-            st.success("File Anda berhasil diunggah!")
-else:
-    df_analysis = load_data('dataset_rokok.csv')
-    if df_analysis is not None:
-        st.session_state['df_analysis'] = df_analysis
+        temp_df_analysis = load_data(uploaded_file)
+        if temp_df_analysis is not None:
+            st.success(f"File '{uploaded_file.name}' berhasil dimuat. Memvalidasi...")
 
-if 'df_analysis' in st.session_state:
+            # --- VALIDASI DATA YANG DIUNGGAH ---
+            validation_passed = True
+            required_columns = [
+                'Kabupaten/Kota', 'Tahun', 'ROKOK DAN TEMBAKAU',
+                'Rokok kretek filter', 'Rokok kretek tanpa filter',
+                'Rokok putih', 'Tembakau', 'Rokok dan tembakau Lainnya'
+            ]
+            min_rows_threshold = 10
+
+            # 1. Cek Kelengkapan Kolom
+            missing_cols = [col for col in required_columns if col not in temp_df_analysis.columns]
+            if missing_cols:
+                st.error(f"❌ Validasi Gagal: Kolom berikut tidak ditemukan di file Anda: **{', '.join(missing_cols)}**.")
+                st.info(f"Pastikan file Anda memiliki semua kolom ini: {', '.join(required_columns)}")
+                validation_passed = False
+
+            # 2. Cek Jumlah Baris Minimum (hanya jika kolom lengkap)
+            if validation_passed and len(temp_df_analysis) < min_rows_threshold:
+                st.error(f"❌ Validasi Gagal: Jumlah baris data terlalu sedikit ({len(temp_df_analysis)} baris).")
+                st.info(f"Minimal diperlukan **{min_rows_threshold}** baris data untuk analisis klasterisasi.")
+                validation_passed = False
+
+            # --- AKHIR VALIDASI ---
+
+            if validation_passed:
+                st.success("✅ Validasi Berhasil!")
+                data_is_valid = True #
+            else:
+                 temp_df_analysis = None
+
+else: # Gunakan Dataset Bawaan
+    temp_df_analysis = load_data('dataset_rokok.csv')
+    if temp_df_analysis is not None:
+        data_is_valid = True
+
+if data_is_valid and temp_df_analysis is not None:
+    st.session_state['df_analysis'] = temp_df_analysis
     st.write("Preview Data yang sedang aktif:")
     st.dataframe(st.session_state['df_analysis'].head())
 
@@ -272,19 +385,39 @@ if 'df_analysis' in st.session_state:
         )
 
         st.caption(f"Rekomendasi `min_samples` untuk {len(selected_features)} fitur adalah **{default_min_samples}**.")
-    
-if st.button("🚀 Proses Klasterisasi", type="primary", key='process_button'):
-        df_to_process = st.session_state['df_analysis']
-        if df_to_process is not None and selected_features:
+
+    # 1. Cek kondisi kesiapan SEBELUM me-render tombol
+    #    Kita gunakan st.session_state.get() agar aman jika 'df_analysis' belum ada
+    df_to_process = st.session_state.get('df_analysis') 
+    is_ready_to_process = (df_to_process is not None) and selected_features
+
+    # 2. Gunakan 'is_ready_to_process' untuk mengatur parameter 'disabled'
+    if st.button("🚀 Proses Klasterisasi", type="primary", key='process_button', disabled=not is_ready_to_process):
+        
+        # 3. Bungkus SELURUH logika proses di dalam 'try...except'
+        try:
+            # Kita sudah tahu df_to_process tidak None, tapi kita panggil lagi
+            df_to_process = st.session_state['df_analysis'] 
+            
             with st.spinner('Melakukan analisis...'):
                 
                 # 1. Filter data asli berdasarkan rentang tahun
                 df_filtered = df_to_process[df_to_process['Tahun'].isin(selected_years)].copy()
                 
+                # 4. TAMBAHKAN VALIDASI: Cek jika data kosong setelah difilter
+                if df_filtered.empty:
+                    st.warning(f"Tidak ditemukan data untuk rentang tahun yang dipilih ({selected_years[0]}-{selected_years[-1]}). Proses dihentikan.")
+                    st.stop() # Menghentikan eksekusi dengan aman
+                
                 # 2. LAKUKAN AGREGRASI MEDIAN PER KABUPATEN/KOTA
                 features_to_agg = selected_features
                 df_aggregated = df_filtered.groupby('Kabupaten/Kota')[features_to_agg].median().reset_index()
-                
+
+                # 5. TAMBAHKAN VALIDASI: Cek jika data agregat kosong
+                if df_aggregated.empty:
+                    st.warning("Data agregat kosong (kemungkinan semua nilai adalah NaN pada fitur/tahun terpilih). Proses dihentikan.")
+                    st.stop() # Menghentikan eksekusi dengan aman
+
                 # 3. JALANKAN KLASTERISASI PADA DATA AGREGAT
                 start_time = time.time()
                 clustering_results = run_clustering(df_aggregated, selected_features, algo_choice, params)
@@ -317,11 +450,35 @@ if st.button("🚀 Proses Klasterisasi", type="primary", key='process_button'):
                     clustering_results['selected_features_run'] = selected_features
                     clustering_results['algo_run'] = algo_choice 
                     clustering_results['start_year'] = start_year 
-                    clustering_results['end_year'] = end_year    
+                    clustering_results['end_year'] = end_year      
                     st.session_state['results_info'] = clustering_results
                     st.success("Analisis selesai!")
-        else:
-            st.warning("Pastikan data telah dimuat dan setidaknya satu fitur dipilih.")
+                
+                else:
+                    # Ini terjadi jika run_clustering() selesai tapi mengembalikan None/False
+                    st.error("Proses klasterisasi tidak menghasilkan output. Silakan periksa parameter Anda.")
+        
+        # 6. Ini adalah blok 'except' yang menangkap semua error (traceback)
+        except Exception as e:
+            # Tampilkan pesan error yang lebih ramah
+            st.error(f"Terjadi kesalahan saat pemrosesan: {e}")
+            st.warning("Proses gagal. Pastikan data Anda bersih (tidak ada nilai kosong/NaN pada fitur terpilih) dan parameter algoritma sudah benar.")
+
+        # 7. Tampilkan peringatan di luar tombol JIKA tombol dinonaktifkan
+        if not is_ready_to_process:
+            st.warning("Tombol 'Proses Klasterisasi' dinonaktifkan. Pastikan data telah dimuat dan setidaknya satu fitur telah dipilih.")
+
+elif source_choice == 'Unggah File Sendiri' and uploaded_file and temp_df_analysis is None and not data_is_valid:
+    # Kondisi ini menangani jika upload ada tapi validasi gagal
+    st.warning("Perbaiki masalah pada file yang diunggah sebelum melanjutkan.")
+    # Jangan tampilkan sisa halaman
+
+elif source_choice == 'Gunakan Dataset Bawaan Website' and not data_is_valid:
+     st.error("Gagal memuat dataset bawaan 'dataset_rokok.csv'. Periksa apakah file ada.")
+     # Jangan tampilkan sisa halaman
+
+
+
 
 # --- BAGIAN HASIL ANALISIS ---
 if 'df_final' in st.session_state:
@@ -735,6 +892,7 @@ if 'df_final' in st.session_state:
         min_map_year = int(df_final['Tahun'].min())
         max_map_year = int(df_final['Tahun'].max())
 
+        st.write("Peta Klasterisasi Tahun ", min_map_year, " - ", max_map_year)
         map_year = 0
         if min_map_year >= max_map_year:
             map_year = min_map_year
