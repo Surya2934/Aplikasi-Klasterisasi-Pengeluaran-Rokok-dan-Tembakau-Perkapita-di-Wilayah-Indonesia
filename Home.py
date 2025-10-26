@@ -36,6 +36,7 @@ st.title("Clustering Pola Pengeluaran Rokok dan Tembakau di Indonesia")
 st.info("""Selamat datang di Dashboard Analisis Pola Pengeluaran Rokok dan Tembakau.
         Aplikasi ini dirancang untuk membantu Anda memahami keragaman pola konsumsi rokok di seluruh kabupaten/kota di Indonesia melalui pendekatan klasterisasi K-Means.
         """)
+st.image("assets/foto_rokok.jpg", width=500)
 
 # st.markdown("---") # Membuat garis pemisah
 
@@ -45,12 +46,11 @@ st.markdown("<br>", unsafe_allow_html=True)
 col1, col2 = st.columns([2, 1])
 
 with col1:
-
-    st.write("Syarat Dataset yang digunakan: " 
+    st.write("=== Dataset sudah tersedia ===") 
+    st.write("Syarat Dataset yang digunakan jika ingin memakai dataset pribadi: " 
     "\n 1. File bertipe .csv" 
     "\n 2. File berisi seluruh kabupaten/kota di Indonesia" 
-    "\n 3. Tidak ada nilai gabungan dari seluruh pengeluaran"
-    "\n 4. Tidak ada duplikat")
+    "\n 3. Tidak ada duplikat")
 
 
 # --- BAGIAN UNDUH TEMPLATE ---
@@ -60,6 +60,7 @@ with col2:
     template_df = pd.DataFrame({
         'Kabupaten/Kota': ["Contoh: Kota Bandung"],
         'Tahun': [2024],
+        'ROKOK DAN TEMBAKAU': [24000.0],
         'Rokok kretek filter': [15000.0],
         'Rokok kretek tanpa filter': [5000.0],
         'Rokok putih': [2500.0],
@@ -76,7 +77,7 @@ with col2:
     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     )
 
-    manual_book_url = "https://drive.google.com/file/d/1P8z1_eaX2PHt-MtiN-hwj1iKPrJqM8LB/view?usp=sharing"
+    manual_book_url = "https://drive.google.com/drive/folders/1ljWgVD--7vg_3oj7gc9Uc-Ka4NBMYLtI?usp=sharing"
     
     st.write("Klik untuk membuka Manual Book")
     st.markdown(f"""
@@ -117,4 +118,4 @@ st.subheader("Untuk OPTICS")
 st.write("4. Tentukan jumlah `sampel minimum` yang ingin digunakan untuk klasterisasi data")
 st.write("5. Klik tombol `Klasterisasi` untuk memulai proses pengelompokkan dan hasil akan muncul")
 
-st.subheader("Jika anda bingung dalam menentukan nilai `K` ataupun `sampel minimum` klik tombol ❓ yang akan memberikan cara menentukan-nya")
+st.subheader("Jika anda bingung dalam menentukan nilai `K` ataupun `sampel minimum` hover tombol ❓ yang akan memberikan cara menentukan-nya")

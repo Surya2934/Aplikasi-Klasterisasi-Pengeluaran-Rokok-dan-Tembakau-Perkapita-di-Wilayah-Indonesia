@@ -16,7 +16,7 @@ st.info("""
 """)
 
 st.header("Tujuan")
-st.write("""
+st.info("""
     Tujuan utama dari perancangan ini adalah untuk menyediakan sebuah alat bantu analisis
     yang dapat mempermudah pengguna dalam mengidentifikasi dan memvisualisasikan
     pola-pola pengeluaran rokok dan tembakau di tingkat kabupaten/kota di Indonesia
@@ -27,8 +27,7 @@ st.header("Teknologi yang Digunakan")
 st.markdown("""
 - **Bahasa Pemrograman:** Python
 - **Framework Aplikasi Web:** Streamlit
-- **Library Analisis Data:** Pandas, Scikit-learn
-- **Library Visualisasi:** Seaborn, Matplotlib, Geopandas
+- **Library Yang digunakan:** pandas, seaborn, matplotlib, scikit-learn, numpy, geopandas, openpyxl, plotly, folium, streamlit-foliumdas
 """)
 
 st.header("Disusun Oleh")
