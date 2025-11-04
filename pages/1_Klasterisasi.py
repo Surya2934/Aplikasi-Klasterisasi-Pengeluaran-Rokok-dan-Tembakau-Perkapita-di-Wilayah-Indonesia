@@ -693,8 +693,7 @@ if 'df_final' in st.session_state:
         with col2_sil:
             st.write("**Cara Membaca Silhouette Plot:**")
             st.info("""
-            Plot ini membantu mengevaluasi seberapa baik setiap titik data cocok dalam klasternya...
-            ... (Teks penjelasan Anda yang lama) ...
+            Plot ini membantu mengevaluasi seberapa baik setiap titik data cocok dalam klasternya
             """)
 
     #Reachabillity Plot (Untuk OPTICS)
@@ -1022,7 +1021,7 @@ if 'df_final' in st.session_state:
             st.info("Tidak ada data untuk dianalisis.")
 
     #Peta
-    st.write("Pemetaan Geografis Hasil Klasterisasi (Folium - Koreksi Warna)")
+    st.write("Pemetaan Geografis Hasil Klasterisasi")
     with st.expander("Klik untuk melihat detail"):
         min_map_year = int(df_final['Tahun'].min())
         max_map_year = int(df_final['Tahun'].max())
@@ -1219,6 +1218,7 @@ if 'df_final' in st.session_state:
             **Hover** di atas garis atau titik untuk melihat nilai pasti per tahun.
             """)
 
+    #Tren tahunan
     st.write("Tren Tahunan per Daerah")
     with st.expander("Klik untuk melihat detail"):
         st.write("Pilih satu Kabupaten/Kota untuk melihat perkembangan pengeluaran rokok, IPM, dan tingkat kemiskinan dari tahun ke tahun.")
@@ -1351,7 +1351,3 @@ if 'df_final' in st.session_state:
 
                         fig_bar_top10.update_layout(xaxis_title="Kabupaten/Kota", yaxis_title="Nilai Pengeluaran", dragmode='pan')
                         st.plotly_chart(fig_bar_top10, use_container_width=True)
-
-    
-
-        
