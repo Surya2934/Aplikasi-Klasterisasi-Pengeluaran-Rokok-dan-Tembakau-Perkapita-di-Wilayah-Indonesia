@@ -507,7 +507,7 @@ if 'df_final' in st.session_state:
 
     st.header("📈 Hasil Analisis")
 
-#Persiapan Plotly
+    #Persiapan Plotly
 
     #Menentukan palet warna
     df_non_noise = df_final[df_final['Cluster'] != -1]
@@ -860,9 +860,9 @@ if 'df_final' in st.session_state:
             """) 
 
     #Scatter plot untuk melihat korelasi
-    st.subheader("Hubungan Pengeluaran Rokok Agregat dengan IPM & Kemiskinan")
-    st.write("Plot ini menunjukkan posisi setiap Kabupaten/Kota berdasarkan pengeluaran rokok total terhadap IPM dan tingkat kemiskinan selama rentang tahun terpilih.")
+    st.write("Korelasi data")
     with st.expander("Klik"):
+        st.write("Plot ini menunjukkan posisi setiap Kabupaten/Kota berdasarkan pengeluaran rokok total terhadap IPM dan tingkat kemiskinan selama rentang tahun terpilih.")
         df_result_agg = results.get('df_result')
         start_year_run = results.get('start_year')
         end_year_run = results.get('end_year')
@@ -913,7 +913,6 @@ if 'df_final' in st.session_state:
                     if df_plot_scatter.empty:
                         st.warning("Tidak ada data Kabupaten/Kota yang cocok antara hasil klaster, rokok total, dan data IPM/Kemiskinan.")
                     else:
-                        st.success(f"Data siap untuk plot (ditemukan {len(df_plot_scatter)} Kab/Kota yang cocok).") # Pesan Sukses
                         col_scatter1, col_scatter2 = st.columns(2)
 
                         #Plot 1: Rokok vs IPM
@@ -922,13 +921,13 @@ if 'df_final' in st.session_state:
                                 fig_scatter_ipm = px.scatter(
                                     df_plot_scatter, x='IPM', y='ROKOK DAN TEMBAKAU',
                                     color='Cluster_Label', color_discrete_map=master_color_map,
-                                    title='Pengeluaran Rokok vs IPM (Median)',
+                                    title='Pengeluaran Rokok vs IPM',
                                     custom_data=['Kabupaten/Kota', 'Cluster_Label', 'Provinsi', 'IPM', 'ROKOK DAN TEMBAKAU']
                                 )
                                 fig_scatter_ipm.update_traces(
-                                    hovertemplate="<b>%{customdata[0]}</b><br>Klaster: %{customdata[1]}<br>Provinsi: %{customdata[2]}<br>IPM (Median): %{customdata[3]:.2f}<br>Rokok (Median): %{customdata[4]:,.0f}<extra></extra>"
+                                    hovertemplate="<b>%{customdata[0]}</b><br>Klaster: %{customdata[1]}<br>Provinsi: %{customdata[2]}<br>IPM: %{customdata[3]:.2f}<br>Rokok: %{customdata[4]:,.0f}<extra></extra>"
                                 )
-                                fig_scatter_ipm.update_layout(dragmode='pan', xaxis_title="IPM (Median)", yaxis_title="Pengeluaran Rokok Total (Median)")
+                                fig_scatter_ipm.update_layout(dragmode='pan', xaxis_title="IPM", yaxis_title="Pengeluaran Rokok Total")
                                 st.plotly_chart(fig_scatter_ipm, use_container_width=True)
                             else:
                                 st.info("Kolom 'IPM' atau 'ROKOK DAN TEMBAKAU' tidak tersedia setelah merge final.") # Pesan error lebih spesifik
@@ -939,13 +938,13 @@ if 'df_final' in st.session_state:
                                 fig_scatter_miskin = px.scatter(
                                     df_plot_scatter, x=kemiskinan_col_name, y='ROKOK DAN TEMBAKAU',
                                     color='Cluster_Label', color_discrete_map=master_color_map,
-                                    title='Pengeluaran Rokok vs Kemiskinan (Median)',
+                                    title='Pengeluaran Rokok vs Kemiskinan',
                                     custom_data=['Kabupaten/Kota', 'Cluster_Label', 'Provinsi', kemiskinan_col_name, 'ROKOK DAN TEMBAKAU']
                                 )
                                 fig_scatter_miskin.update_traces(
-                                    hovertemplate="<b>%{customdata[0]}</b><br>Klaster: %{customdata[1]}<br>Provinsi: %{customdata[2]}<br>Kemiskinan (Median %): %{customdata[3]:.2f}<br>Rokok (Median): %{customdata[4]:,.0f}<extra></extra>"
+                                    hovertemplate="<b>%{customdata[0]}</b><br>Klaster: %{customdata[1]}<br>Provinsi: %{customdata[2]}<br>Kemiskinan: %{customdata[3]:.2f}<br>Rokok: %{customdata[4]:,.0f}<extra></extra>"
                                 )
-                                fig_scatter_miskin.update_layout(dragmode='pan', xaxis_title="Persentase Kemiskinan (Median)", yaxis_title="Pengeluaran Rokok Total (Median)")
+                                fig_scatter_miskin.update_layout(dragmode='pan', xaxis_title="Persentase Kemiskinan (Median)", yaxis_title="Pengeluaran Rokok Total")
                                 st.plotly_chart(fig_scatter_miskin, use_container_width=True)
                             else:
                                 st.info(f"Kolom '{kemiskinan_col_name}' atau 'ROKOK DAN TEMBAKAU' tidak tersedia setelah merge final.") # Pesan error lebih spesifik
