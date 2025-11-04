@@ -8,6 +8,7 @@ import numpy as np
 import geopandas as gpd 
 import plotly.express as px
 import folium
+import io
 from sklearn.preprocessing import RobustScaler
 from sklearn.cluster import KMeans, OPTICS
 from sklearn.metrics import silhouette_score, davies_bouldin_score
@@ -15,27 +16,27 @@ from sklearn.decomposition import PCA
 from streamlit_folium import st_folium
 from sklearn.metrics import silhouette_samples
 
-# --- Import kode K-Means++ Manual ---
+#Import kode K-Means++
 try:
     from k_means_plus_plus import KMeansPlusPlusManual
 except ImportError:
     st.error("File 'k_means_plus_plus.py' tidak ditemukan.")
     KMeansPlusPlusManual = None
 
-# --- KONFIGURASI HALAMAN ---
-st.set_page_config(page_title="Analisis Utama", layout="wide")
+st.set_page_config(page_title="Analisis Utama", page_icon="🚬", layout="wide")
 
 with st.sidebar:
     st.title("Dashboard Klasterisasi")
 
-# --- FUNGSI-FUNGSI UTAMA ---
+#Fungsi - fungsi
+#Load Data
 @st.cache_data
 def load_data(file_path):
     df = None
     is_uploaded_file = hasattr(file_path, 'seek')
 
     try:
-        # --- Handle Uploaded Files ---
+        #Mengurus file yg diupload
         if is_uploaded_file:
             filename = file_path.name.lower()
             file_path.seek(0)
@@ -48,19 +49,19 @@ def load_data(file_path):
                     file_path.seek(0)
                     pass
             
-            # Jika bukan Excel atau Excel gagal, coba CSV
+            #Jika bukan Excel atau Excel gagal, coba CSV
             if df is None and (filename.endswith('.csv') or not filename.endswith('.xlsx')):
                 
-                # --- Upaya 1: Pemisah Titik Koma (;) ---
+                #Test 1: Pemisah Titik Koma (;)
                 try:
                     file_path.seek(0)
                     df = pd.read_csv(file_path, delimiter=';')
                 except Exception as e_semi:
-                    df = None # Pastikan df adalah None jika gagal
+                    df = None #Memastikan df adalah None jika gagal
 
-                # --- Upaya 2: Pemisah Koma (,) ---
-                # Coba koma JIKA upaya pertama gagal (df is None)
-                # ATAU JIKA upaya pertama 'berhasil' tapi hanya menghasilkan 1 kolom
+                #Test 2: Pemisah Koma (,)
+                #Coba koma jika upaya pertama gagal (df is None)
+                #atau jika upaya pertama 'berhasil' tapi hanya menghasilkan 1 kolom
                 if df is None or len(df.columns) <= 1:
                     
                     try:
@@ -71,11 +72,11 @@ def load_data(file_path):
                         df = None
                         return None
 
-                # Peringatan terakhir jika masih 1 kolom (mungkin memang file 1 kolom)
+                #Peringatan terakhir jika masih 1 kolom (mungkin memang file 1 kolom)
                 if df is not None and len(df.columns) <= 1:
-                    st.warning("File CSV berhasil dimuat, tetapi tampaknya hanya memiliki satu kolom. Periksa kembali pemisah file Anda.")
+                    st.warning("File CSV berhasil dimuat, tetapi hanya memiliki satu kolom. Periksa kembali pemisah file Anda.")
 
-        # --- Handle File Paths (e.g., dataset bawaan) ---
+        #Kalau dataset bawaan
         else:
             filename = str(file_path).lower()
             if filename.endswith('.xlsx'):
@@ -85,7 +86,7 @@ def load_data(file_path):
                     st.error(f"Gagal membaca file '{filename}' sebagai Excel. Error: {e_excel}")
                     return None
             elif filename.endswith('.csv'):
-                # Coba koma dulu (standar umum)
+                #Coba koma dulu
                 try:
                     df = pd.read_csv(filename, delimiter=',')
                 except Exception:
@@ -96,7 +97,7 @@ def load_data(file_path):
                         st.error(f"Gagal membaca file CSV '{filename}' dengan ',' atau ';'. Error: {e_csv}")
                         return None
                         
-                # Cek hasil bacaan file path juga
+                #Cek hasil bacaan file path juga
                 if df is not None and len(df.columns) <= 1:
                     st.warning(f"File CSV '{filename}' dimuat, tetapi hanya memiliki satu kolom. Mungkin pemisahnya salah?")
 
@@ -104,7 +105,7 @@ def load_data(file_path):
                 st.error(f"Format file '{filename}' tidak didukung (hanya .csv atau .xlsx).")
                 return None
 
-        # --- Post-processing (jika df berhasil dimuat) ---
+        #jika df berhasil dimuat
         if df is not None:
             if 'Kabupaten/Kota' in df.columns and 'Tahun' in df.columns:
                 df.drop_duplicates(subset=['Kabupaten/Kota', 'Tahun'], keep='first', inplace=True)
@@ -120,6 +121,16 @@ def load_data(file_path):
         st.error(f"Error: Gagal memproses file. Detail: {e}")
         return None
 
+#Fungsi callback untuk mereset hasil eksperimen ketika pengaturan analisa ada yg diubah
+def clear_analysis_results():
+    keys_to_clear = ['df_final', 'results_info', 'eval_graph_data', 'df_analysis', 'df_display_final']
+    for key in keys_to_clear:
+        if key in st.session_state:
+            del st.session_state[key]
+    # Anda bisa tambahkan pesan singkat jika perlu
+    st.toast("Pilihan diubah, hasil analisis sebelumnya dibersihkan.")
+
+#Persiapan Peta
 @st.cache_data
 def load_geodata(file_path):
     try:
@@ -129,6 +140,7 @@ def load_geodata(file_path):
         st.error(f"Error: Gagal memuat file GeoJSON '{file_path}'. Detail: {e}")
         return None
 
+#Fungsi Klasterisasi
 def run_clustering(df, selected_features, algorithm_choice, params):
     if not selected_features:
         st.error("Harap pilih setidaknya satu fitur.")
@@ -146,7 +158,7 @@ def run_clustering(df, selected_features, algorithm_choice, params):
     elif algorithm_choice == 'K-Means':
         model = KMeans(n_clusters=params['k'], init='random', n_init=10, random_state=42)
     elif algorithm_choice == 'OPTICS':
-        model = OPTICS(min_samples=params['min_samples'], xi=0.05, min_cluster_size=15)
+        model = OPTICS(min_samples=params['min_samples'], xi=0.05, min_cluster_size=10)
 
     if model is None:
         st.error("Gagal menginisialisasi model klasterisasi.")
@@ -167,7 +179,7 @@ def run_clustering(df, selected_features, algorithm_choice, params):
             results['sil'] = silhouette_score(X_non_noise, labels_non_noise)
             results['dbi'] = davies_bouldin_score(X_non_noise, labels_non_noise)
         except ValueError:
-            pass # Skor tidak dapat dihitung
+            pass #Skor tidak dapat dihitung hasil jadi N/A
     
     if algorithm_choice == 'OPTICS':
         results['n_clusters_found'] = n_clusters_found
@@ -175,21 +187,21 @@ def run_clustering(df, selected_features, algorithm_choice, params):
 
     return results
 
-# --- TAMPILAN HALAMAN UTAMA ---
 st.title("Halaman Analisis Utama Klasterisasi 🔬")
 
-# --- BAGIAN INPUT DATA ---
+#Bagian Input Data
 st.header("Sumber Data")
 source_choice = st.radio(
     "Pilih sumber data untuk analisis:",
     ('Gunakan Dataset Bawaan Website', 'Unggah File Sendiri'),
     horizontal=True,
-    key='data_source_radio'
+    key='data_source_radio',
+    on_change=clear_analysis_results
 )
 
-# Variabel flag untuk menandakan data valid
+#Variabel flag untuk menandakan data valid
 data_is_valid = False
-temp_df_analysis = None # Tempat penyimpanan sementara
+temp_df_analysis = None #Tempat penyimpanan sementara
 
 if source_choice == 'Unggah File Sendiri':
     uploaded_file = st.file_uploader("Pilih file CSV atau Excel", type=['csv', 'xlsx'])
@@ -198,7 +210,7 @@ if source_choice == 'Unggah File Sendiri':
         if temp_df_analysis is not None:
             st.success(f"File '{uploaded_file.name}' berhasil dimuat. Memvalidasi...")
 
-            # --- VALIDASI DATA YANG DIUNGGAH ---
+            #Validasi
             validation_passed = True
             required_columns = [
                 'Kabupaten/Kota', 'Tahun', 'ROKOK DAN TEMBAKAU',
@@ -207,24 +219,22 @@ if source_choice == 'Unggah File Sendiri':
             ]
             min_rows_threshold = 10
 
-            # 1. Cek Kelengkapan Kolom
+            #1. Cek Kelengkapan Kolom
             missing_cols = [col for col in required_columns if col not in temp_df_analysis.columns]
             if missing_cols:
                 st.error(f"❌ Validasi Gagal: Kolom berikut tidak ditemukan di file Anda: **{', '.join(missing_cols)}**.")
                 st.info(f"Pastikan file Anda memiliki semua kolom ini: {', '.join(required_columns)}")
                 validation_passed = False
 
-            # 2. Cek Jumlah Baris Minimum (hanya jika kolom lengkap)
+            #2. Cek Jumlah Baris Minimum (hanya jika kolom lengkap)
             if validation_passed and len(temp_df_analysis) < min_rows_threshold:
                 st.error(f"❌ Validasi Gagal: Jumlah baris data terlalu sedikit ({len(temp_df_analysis)} baris).")
                 st.info(f"Minimal diperlukan **{min_rows_threshold}** baris data untuk analisis klasterisasi.")
                 validation_passed = False
 
-            # --- AKHIR VALIDASI ---
-
             if validation_passed:
                 st.success("✅ Validasi Berhasil!")
-                data_is_valid = True #
+                data_is_valid = True
             else:
                  temp_df_analysis = None
 
@@ -240,30 +250,30 @@ if data_is_valid and temp_df_analysis is not None:
 
     st.markdown("---")
 
-    # --- BAGIAN INPUT ---
+    #Input param
     st.header("Pengaturan Analisis")
     st.write("Pilihlah algoritma dan fitur sesuai keinginan anda")
     col1, col2, col3 = st.columns(3)
     with col1:
-        algo_choice = st.radio("Pilih Algoritma:", ('K-Means', 'K-Means++', 'OPTICS'))
+        algo_choice = st.radio("Pilih Algoritma:", ('K-Means', 'K-Means++', 'OPTICS'), on_change=clear_analysis_results)
     with col2:
         all_features = ['ROKOK DAN TEMBAKAU', 'Rokok kretek filter', 'Rokok kretek tanpa filter', 'Rokok putih', 'Tembakau', 'Rokok dan tembakau Lainnya']
         default_features = ['Rokok kretek filter', 'Rokok kretek tanpa filter', 'Rokok putih', 'Tembakau', 'Rokok dan tembakau Lainnya']
-        selected_features = st.multiselect("Pilih Fitur Analisis:", options=all_features, default=default_features)
+        selected_features = st.multiselect("Pilih Fitur Analisis:", options=all_features, default=default_features, on_change=clear_analysis_results)
     with col3:
-        start_year, end_year = st.slider("Pilih Rentang Tahun:", 2018, 2024, (2018, 2024))
+        start_year, end_year = st.slider("Pilih Rentang Tahun:", 2018, 2024, (2018, 2024), on_change=clear_analysis_results)
         selected_years = list(range(start_year, end_year + 1))
-
-    st.markdown("---")
-
-    # --- BAGIAN PENGATURAN PARAMETER & PROSES ---
-    st.header("Pengaturan Parameter & Klasterisasi")
 
     params = {}
     if algo_choice in ['K-Means', 'K-Means++']:
         if st.button("Cari rekomendasi nilai K"):
             # Muat data asli (dataset_rokok.csv)
-            df_rokok_eval = load_data('dataset_rokok.csv')
+            if 'df_analysis' not in st.session_state or st.session_state['df_analysis'] is None:
+                st.warning("⚠️ Data belum dimuat. Silakan pilih sumber data (bawaan atau unggah file) terlebih dahulu.")
+                st.stop() # Hentikan eksekusi jika data tidak ada
+
+            df_rokok_eval = st.session_state['df_analysis'].copy() # Ambil data dari session state
+
             if df_rokok_eval is not None and selected_features:
                 with st.spinner('Mengevaluasi K dari 2-10 pada data...'):
                     # 1. Filter data asli berdasarkan rentang tahun
@@ -286,20 +296,20 @@ if data_is_valid and temp_df_analysis is not None:
                     scores_sklearn = []
                     scores_manual = []
                     for k in k_range:
-                        # K-Means (Sklearn)
+                        # K-Means
                         km_sklearn = KMeans(n_clusters=k, init='random', n_init=10, random_state=42)
-                        # Gunakan X_scaled_eval (data agregat)
+                        # Gunakan X_scaled_eval
                         labels_sklearn = km_sklearn.fit_predict(X_scaled_eval)
-                        # Hindari error jika hanya 1 klaster terbentuk (jarang terjadi tapi mungkin)
+                        # Hindari error jika hanya 1 klaster terbentuk
                         if len(set(labels_sklearn)) > 1:
                              scores_sklearn.append(silhouette_score(X_scaled_eval, labels_sklearn))
                         else:
                              scores_sklearn.append(-1) # Skor tidak valid
 
-                        # K-Means++ (Manual)
+                        # K-Means++
                         if KMeansPlusPlusManual:
                             km_manual = KMeansPlusPlusManual(n_clusters=k, random_state=42)
-                            # Gunakan X_scaled_eval (data agregat)
+                            # Gunakan X_scaled_eval
                             labels_manual = km_manual.fit_predict(X_scaled_eval)
                             if len(set(labels_manual)) > 1:
                                 scores_manual.append(silhouette_score(X_scaled_eval, labels_manual))
@@ -351,7 +361,7 @@ if data_is_valid and temp_df_analysis is not None:
                     title="Perbandingan Silhouette Score"
                 )
                 fig_eval.update_layout(xaxis_title="Jumlah Klaster (K)", yaxis_title="Silhouette Score")
-                st.plotly_chart(fig_eval, use_container_width=True) # <-- Tampilkan plot Plotly
+                st.plotly_chart(fig_eval, use_container_width=True)
                 st.info("Nilai K terbaik adalah yang memiliki Silhouette Score tertinggi. Hover di atas titik untuk melihat nilai pasti.")
             else:
                 st.warning("Data evaluasi tidak tersedia untuk ditampilkan.")
@@ -387,7 +397,6 @@ if data_is_valid and temp_df_analysis is not None:
         st.caption(f"Rekomendasi `min_samples` untuk {len(selected_features)} fitur adalah **{default_min_samples}**.")
 
     # 1. Cek kondisi kesiapan SEBELUM me-render tombol
-    #    Kita gunakan st.session_state.get() agar aman jika 'df_analysis' belum ada
     df_to_process = st.session_state.get('df_analysis') 
     is_ready_to_process = (df_to_process is not None) and selected_features
 
@@ -396,45 +405,44 @@ if data_is_valid and temp_df_analysis is not None:
         
         # 3. Bungkus SELURUH logika proses di dalam 'try...except'
         try:
-            # Kita sudah tahu df_to_process tidak None, tapi kita panggil lagi
             df_to_process = st.session_state['df_analysis'] 
             
             with st.spinner('Melakukan analisis...'):
                 
-                # 1. Filter data asli berdasarkan rentang tahun
+                #Filter data asli berdasarkan rentang tahun
                 df_filtered = df_to_process[df_to_process['Tahun'].isin(selected_years)].copy()
                 
-                # 4. TAMBAHKAN VALIDASI: Cek jika data kosong setelah difilter
+                #Cek jika data kosong setelah difilter
                 if df_filtered.empty:
                     st.warning(f"Tidak ditemukan data untuk rentang tahun yang dipilih ({selected_years[0]}-{selected_years[-1]}). Proses dihentikan.")
                     st.stop() # Menghentikan eksekusi dengan aman
                 
-                # 2. LAKUKAN AGREGRASI MEDIAN PER KABUPATEN/KOTA
+                #LAKUKAN AGREGRASI MEDIAN PER KABUPATEN/KOTA
                 features_to_agg = selected_features
                 df_aggregated = df_filtered.groupby('Kabupaten/Kota')[features_to_agg].median().reset_index()
 
-                # 5. TAMBAHKAN VALIDASI: Cek jika data agregat kosong
+                #TAMBAHKAN VALIDASI: Cek jika data agregat kosong
                 if df_aggregated.empty:
                     st.warning("Data agregat kosong (kemungkinan semua nilai adalah NaN pada fitur/tahun terpilih). Proses dihentikan.")
                     st.stop() # Menghentikan eksekusi dengan aman
 
-                # 3. JALANKAN KLASTERISASI PADA DATA AGREGAT
+                #JALANKAN KLASTERISASI PADA DATA AGREGAT
                 start_time = time.time()
                 clustering_results = run_clustering(df_aggregated, selected_features, algo_choice, params)
                 runtime = time.time() - start_time
                 
                 if clustering_results:
-                    # 4. Dapatkan hasil dari data agregat
+                    # Dapatkan hasil dari data agregat
                     df_result_agg = clustering_results['df_result']
                     
-                    # 5. Buat peta (dictionary) dari hasil klasterisasi
+                    #Buat peta (dictionary) dari hasil klasterisasi
                     cluster_map = df_result_agg.set_index('Kabupaten/Kota')['Cluster'].to_dict()
 
-                    # 6. Terapkan (map) label klaster kembali ke data asli (df_filtered)
+                    #Terapkan (map) label klaster kembali ke data asli (df_filtered)
                     df_final_with_clusters = df_filtered.copy()
                     df_final_with_clusters['Cluster'] = df_final_with_clusters['Kabupaten/Kota'].map(cluster_map)
                     
-                    # 7. Gabungkan dengan data tambahan (IPM, Kemiskinan, dll)
+                    #Gabungkan dengan data tambahan (IPM, Kemiskinan, dll)
                     df_tambahan = load_data('dataset_tambahan.csv')
                     if df_tambahan is not None:
                         df_tambahan['Tahun'] = df_tambahan['Tahun'].astype(int)
@@ -443,7 +451,7 @@ if data_is_valid and temp_df_analysis is not None:
                     else:
                         df_final = df_final_with_clusters
                     
-                    # 8. Simpan data final (yang besar) ke session state
+                    #Simpan data final (yang besar) ke session state
                     st.session_state['df_final'] = df_final
                     
                     clustering_results['runtime'] = runtime
@@ -455,32 +463,28 @@ if data_is_valid and temp_df_analysis is not None:
                     st.success("Analisis selesai!")
                 
                 else:
-                    # Ini terjadi jika run_clustering() selesai tapi mengembalikan None/False
                     st.error("Proses klasterisasi tidak menghasilkan output. Silakan periksa parameter Anda.")
         
-        # 6. Ini adalah blok 'except' yang menangkap semua error (traceback)
+        #Agar kalau error tidak memunculkan traceback
         except Exception as e:
-            # Tampilkan pesan error yang lebih ramah
+            # Tampilkan pesan error yang lebih dipahami
             st.error(f"Terjadi kesalahan saat pemrosesan: {e}")
             st.warning("Proses gagal. Pastikan data Anda bersih (tidak ada nilai kosong/NaN pada fitur terpilih) dan parameter algoritma sudah benar.")
 
-        # 7. Tampilkan peringatan di luar tombol JIKA tombol dinonaktifkan
+        #Tampilkan peringatan di luar tombol JIKA tombol dinonaktifkan
         if not is_ready_to_process:
             st.warning("Tombol 'Proses Klasterisasi' dinonaktifkan. Pastikan data telah dimuat dan setidaknya satu fitur telah dipilih.")
 
 elif source_choice == 'Unggah File Sendiri' and uploaded_file and temp_df_analysis is None and not data_is_valid:
-    # Kondisi ini menangani jika upload ada tapi validasi gagal
+    #Kondisi ini menangani jika upload ada tapi validasi gagal
     st.warning("Perbaiki masalah pada file yang diunggah sebelum melanjutkan.")
-    # Jangan tampilkan sisa halaman
+    #Jangan tampilkan sisa halaman
 
 elif source_choice == 'Gunakan Dataset Bawaan Website' and not data_is_valid:
-     st.error("Gagal memuat dataset bawaan 'dataset_rokok.csv'. Periksa apakah file ada.")
-     # Jangan tampilkan sisa halaman
+    st.error("Gagal memuat dataset bawaan 'dataset_rokok.csv'. Periksa apakah file ada.")
+    #Jangan tampilkan sisa halaman
 
-
-
-
-# --- BAGIAN HASIL ANALISIS ---
+#BAGIAN HASIL ANALISIs
 if 'df_final' in st.session_state:
     results = st.session_state.get('results_info', {})
     df_final = st.session_state.get('df_final')
@@ -490,42 +494,48 @@ if 'df_final' in st.session_state:
         st.stop()
 
     model = results.get('model')
-    features_run = results.get('selected_features_run', selected_features)
+    features_run = results.get('selected_features_run') # Coba ambil dari hasil
+    
+    # Tambahkan pemeriksaan jika fitur tidak ditemukan di hasil tersimpan
+    if features_run is None:
+        st.error("Gagal mendapatkan daftar fitur yang digunakan dari hasil analisis tersimpan. Hasil mungkin tidak konsisten. Coba jalankan ulang analisis.")
+        features_run = [] # Default ke list kosong jika tidak ditemukan
+    model = results.get('model')
+
     X_scaled_result = results.get('X_scaled')
     df_filtered_result = results.get('df_filtered')
 
     st.header("📈 Hasil Analisis")
 
-# --- Definisikan Skema Warna & Label Terpusat (Persiapan Plotly) ---
+#Persiapan Plotly
 
-    # 1. Tentukan palet warna
+    #Menentukan palet warna
     df_non_noise = df_final[df_final['Cluster'] != -1]
     unique_clusters = sorted(df_non_noise['Cluster'].unique())
     
     colors_sns = sns.color_palette('viridis', n_colors=len(unique_clusters))
     colors_hex = [f'#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}' for (r,g,b) in colors_sns]
 
-    # 3. Buat Peta Label (master_label_map)
+    #Buat Peta Label (master_label_map)
     master_label_map = {cluster: f"Klaster {cluster}" for cluster in unique_clusters}
     master_label_map[-1] = "Noise"
 
-    # 2. Buat Peta Warna (master_color_map)
-    # Kita ambil label dari master_label_map yang baru dibuat
+    # Buat Peta Warna (master_color_map)
+    #Ambil label dari master_label_map yang baru dibuat
     master_color_map = {master_label_map[cluster]: colors_hex[i] for i, cluster in enumerate(unique_clusters)}
     master_color_map["Noise"] = 'grey'
     master_color_map["Tidak Ada Data"] = '#D3D3D3'
 
-    # 4. Terapkan Label ke DataFrame
+    #Terapkan Label ke DataFrame
     df_final['Cluster_Label'] = df_final['Cluster'].map(master_label_map)
     
-    # Menerapkan ke data agregat
+    #Menerapkan ke data agregat
     df_result_agg = results.get('df_result')
     if df_result_agg is not None:
         df_result_agg['Cluster_Label'] = df_result_agg['Cluster'].map(master_label_map)
-        # Simpan kembali ke results_info untuk Scatter Plot
         st.session_state['results_info']['df_result'] = df_result_agg
 
-    # Tampilkan Informasi
+    #Tampilkan Informasi
     col1, col2, col3 = st.columns(3)
     col1.metric("Silhouette Score", f"{results.get('sil', 0):.4f}" if 'sil' in results else "N/A")
     col2.metric("Davies-Bouldin Index", f"{results.get('dbi', 0):.4f}" if 'dbi' in results else "N/A")
@@ -619,61 +629,59 @@ if 'df_final' in st.session_state:
     st.subheader(f"Visualisasi Hasil")
     
     #Siluet plot
-    st.write("**Visualisasi Silhouette per Klaster**")
+    st.write("Visualisasi Silhouette per Klaster")
     with st.expander("Klik untuk melihat detail"):
-        col1_sil, col2_sil = st.columns([2,1]) # Buat kolom untuk plot dan penjelasan
+        col1_sil, col2_sil = st.columns([2,1])
         with col1_sil:
-            # Ambil data agregat dan hasil klasterisasinya
             X_scaled_agg = results.get('X_scaled')
-            df_result_agg = results.get('df_result') # Ini adalah df agregat dgn cluster
+            df_result_agg = results.get('df_result')
 
             if X_scaled_agg is not None and df_result_agg is not None:
                 labels = df_result_agg['Cluster'].values
-                n_clusters = len(set(labels)) - (1 if -1 in labels else 0) # Hitung jumlah klaster (abaikan noise -1)
-                avg_silhouette_score = results.get('sil') # Ambil skor rata-rata yg sudah dihitung
+                n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+                avg_silhouette_score = results.get('sil') 
 
-                if n_clusters > 1 and avg_silhouette_score is not None: # Perlu > 1 klaster
+                if n_clusters > 1 and avg_silhouette_score is not None:
                     fig_sil, ax_sil = plt.subplots(1, 1, figsize=(7, 5))
 
-                    # Batas bawah y-axis untuk plot klaster pertama
                     y_lower = 10
-
-                    # Hitung skor siluet untuk setiap sampel
                     sample_silhouette_values = silhouette_samples(X_scaled_agg, labels)
 
                     for i in range(n_clusters):
-                        # Ambil skor siluet untuk sampel di klaster i, dan urutkan
-                        ith_cluster_silhouette_values = \
-                            sample_silhouette_values[labels == i]
+                        ith_cluster_silhouette_values = sample_silhouette_values[labels == i]
                         ith_cluster_silhouette_values.sort()
 
                         size_cluster_i = ith_cluster_silhouette_values.shape[0]
                         y_upper = y_lower + size_cluster_i
 
-                        # Pilih warna untuk klaster
-                        color = cm.viridis(float(i) / n_clusters) # Gunakan colormap viridis
+                        color = cm.viridis(float(i) / n_clusters)
                         ax_sil.fill_betweenx(np.arange(y_lower, y_upper),
                                           0, ith_cluster_silhouette_values,
                                           facecolor=color, edgecolor=color, alpha=0.7)
-
-                        # Label di tengah plot siluet klaster
                         ax_sil.text(-0.05, y_lower + 0.5 * size_cluster_i, str(i))
-
-                        # Hitung batas y bawah baru untuk plot berikutnya
-                        y_lower = y_upper + 10  # 10 untuk spasi antar plot
+                        y_lower = y_upper + 10
 
                     ax_sil.set_title("Silhouette Plot untuk Setiap Klaster")
                     ax_sil.set_xlabel("Nilai Koefisien Silhouette")
                     ax_sil.set_ylabel("Label Klaster")
-
-                    # Garis vertikal untuk rata-rata skor siluet
                     ax_sil.axvline(x=avg_silhouette_score, color="red", linestyle="--", label=f"Avg: {avg_silhouette_score:.2f}")
                     ax_sil.legend(loc='best')
-
                     ax_sil.set_yticks([])
                     ax_sil.set_xticks([-0.1, 0, 0.2, 0.4, 0.6, 0.8, 1])
+                    
+                    img_buffer = io.BytesIO()
+                    fig_sil.savefig(img_buffer, format='png', bbox_inches='tight', dpi=150)
+                    img_buffer.seek(0)
 
                     st.pyplot(fig_sil)
+                    plt.close(fig_sil)
+
+                    st.download_button(
+                        label="📥 Unduh Plot Silhouette (PNG)",
+                        data=img_buffer,
+                        file_name=f'silhouette_plot_{results.get("algo_run", "K-Means")}_K{n_clusters}.png',
+                        mime='image/png'
+                    )
 
                 elif avg_silhouette_score is None:
                      st.warning("Skor Silhouette rata-rata tidak tersedia.")
@@ -685,15 +693,11 @@ if 'df_final' in st.session_state:
         with col2_sil:
             st.write("**Cara Membaca Silhouette Plot:**")
             st.info("""
-            Plot ini membantu mengevaluasi seberapa baik setiap titik data cocok dalam klasternya dibandingkan dengan klaster tetangga.
-
-            * **Lebar Bentuk (Sumbu X):** Menunjukkan nilai koefisien *silhouette*. Semakin mendekati +1, semakin baik titik data tersebut cocok di klasternya dan jauh dari klaster lain. Nilai mendekati 0 berarti dekat dengan batas antar klaster. Nilai negatif berarti mungkin salah klaster.
-            * **Tinggi Bentuk (Sumbu Y):** Menunjukkan jumlah titik data dalam klaster tersebut.
-            * **Garis Merah Putus-putus:** Menunjukkan rata-rata koefisien *silhouette* untuk *semua* titik data.
-            * **Bentuk Ideal:** Bentuk yang "gemuk" (lebar merata mendekati 1) dan tingginya proporsional menunjukkan klaster yang bagus. Bentuk yang "tipis" atau puncaknya jauh di bawah garis merah menandakan klaster yang kurang baik.
+            Plot ini membantu mengevaluasi seberapa baik setiap titik data cocok dalam klasternya...
+            ... (Teks penjelasan Anda yang lama) ...
             """)
 
-    # --- REACHABILITY PLOT (KHUSUS OPTICS) ---
+    #Reachabillity Plot (Untuk OPTICS)
     if 'n_clusters_found' in results: # Tanda bahwa OPTICS dijalankan
         st.write("**Grafik Reachability OPTICS**")
         with st.expander("Klik untuk melihat detail"):
@@ -722,8 +726,7 @@ if 'df_final' in st.session_state:
                         color_discrete_map=master_color_map,
                         title='OPTICS Reachability Plot'
                     )
-                    
-                    # Sembunyikan legend (terlalu ramai)
+
                     fig_reach.update_layout(showlegend=False, dragmode='pan') 
                     
                     st.plotly_chart(fig_reach, use_container_width=True)
@@ -737,7 +740,7 @@ if 'df_final' in st.session_state:
                 """)
 
     #Distribusi Klaster
-    st.write("**Distribusi Anggota per Klaster**")
+    st.write("Distribusi Anggota per Klaster")
     with st.expander("Klik untuk melihat detail"):
         col1, col2 = st.columns([2, 1])
         
@@ -745,7 +748,6 @@ if 'df_final' in st.session_state:
         
         with col1:
             if df_result_agg is not None:
-                # Gunakan df_result_agg yang sudah memiliki 'Cluster_Label'
                 counts_df = df_result_agg.groupby('Cluster_Label').size().reset_index(name='Jumlah')
                 
                 fig1 = px.bar(counts_df, 
@@ -774,61 +776,195 @@ if 'df_final' in st.session_state:
             else:
                 st.write("Tidak ada data untuk dihitung.")
 
-    #Scatter Plot
-    st.write("**Visualisasi Persebaran Klaster**")
+    #Scatter Plot / Strip Plot
+    st.write("Visualisasi Persebaran Klaster")
     with st.expander("Klik untuk melihat detail"):
         col1, col2 = st.columns([2, 1])
         with col1:
-            X_scaled_agg = results.get('X_scaled') 
-            df_result_agg = results.get('df_result') # Ambil df_result_agg yg sdh update
-            
-            if X_scaled_agg is not None and df_result_agg is not None and len(features_run) > 1:
-                pca = PCA(n_components=2)
-                principal_components = pca.fit_transform(X_scaled_agg)
-                pca_df = pd.DataFrame(data=principal_components, columns=['PC1', 'PC2'])
-                
-                # Tambahkan label dan nama kab/kota untuk hover
-                pca_df['Cluster_Label'] = df_result_agg['Cluster_Label'].values 
-                pca_df['Kabupaten/Kota'] = df_result_agg['Kabupaten/Kota'].values
+            X_scaled_agg = results.get('X_scaled')
+            df_result_agg = results.get('df_result')
+            features_run = results.get('selected_features_run', [])
 
-                fig3 = px.scatter(pca_df, 
-                                  x='PC1', 
-                                  y='PC2', 
-                                  color='Cluster_Label',
-                                  color_discrete_map=master_color_map,
-                                  title='Visualisasi Persebaran Klaster',
-                                  custom_data=['Kabupaten/Kota', 'Cluster_Label'])
-                
-                fig3.update_traces(
-                    hovertemplate="<b>Kab/Kota:</b> %{customdata[0]}<br>" +
-                                  "<b>Klaster:</b> %{customdata[1]}<br>" +
-                                  "<extra></extra>" # Hapus info tambahan default
-                )
+            if X_scaled_agg is not None and df_result_agg is not None:
 
-                fig3.update_layout(legend_title_text='Klaster', dragmode='pan')
-                st.plotly_chart(fig3, use_container_width=True)
-            
-            elif X_scaled_agg is None or df_result_agg is None:
-                    st.warning("Data hasil tidak ditemukan.")
+                #KASUS 1: 2 FITUR ATAU LEBIH (PCA PLOT)
+                if len(features_run) > 1:
+                    required_cols_pca = ['Kabupaten/Kota', 'Cluster_Label']
+                    if all(col in df_result_agg.columns for col in required_cols_pca):
+                        pca = PCA(n_components=2)
+                        principal_components = pca.fit_transform(X_scaled_agg)
+                        pca_df = pd.DataFrame(data=principal_components, columns=['PC1', 'PC2'])
+                        pca_df['Cluster_Label'] = df_result_agg['Cluster_Label'].values
+                        pca_df['Kabupaten/Kota'] = df_result_agg['Kabupaten/Kota'].values
+
+                        fig3 = px.scatter(pca_df,
+                                          x='PC1',
+                                          y='PC2',
+                                          color='Cluster_Label',
+                                          color_discrete_map=master_color_map,
+                                          title='Visualisasi Persebaran Klaster (PCA)',
+                                          custom_data=['Kabupaten/Kota', 'Cluster_Label']
+                                         )
+                        fig3.update_traces(
+                            hovertemplate="<b>Kab/Kota:</b> %{customdata[0]}<br>" +
+                                          "<b></b> %{customdata[1]}" +
+                                          "<extra></extra>"
+                        )
+                        fig3.update_layout(dragmode='pan', legend_title_text='Klaster')
+                        st.plotly_chart(fig3, use_container_width=True)
+                    else:
+                        st.warning(f"Kolom yg diperlukan untuk PCA hover tidak ditemukan di data. (Membutuhkan: {required_cols_pca})")
+
+                #KASUS 2: HANYA 1 FITUR (STRIP PLOT)
+                elif len(features_run) == 1:
+                    single_feature_name = features_run[0]
+                    st.info(f"Menampilkan Strip Plot (1D) karena hanya 1 fitur dipilih: **{single_feature_name}**")
+
+                    # Cek kolom yang diperlukan
+                    required_cols_strip = [single_feature_name, 'Kabupaten/Kota', 'Cluster_Label']
+                    if all(col in df_result_agg.columns for col in required_cols_strip):
+
+                        fig_strip = px.strip(
+                            df_result_agg,
+                            x='Cluster_Label',
+                            y=single_feature_name,
+                            color='Cluster_Label',
+                            color_discrete_map=master_color_map,
+                            title=f'Persebaran Klaster untuk Fitur: {single_feature_name}',
+                            custom_data=['Kabupaten/Kota', 'Cluster_Label', single_feature_name]
+                        )
+                        fig_strip.update_traces(
+                            hovertemplate="<b>Kab/Kota:</b> %{customdata[0]}<br>" +
+                                          "<b>Klaster:</b> %{customdata[1]}<br>" +
+                                          f"<b>{single_feature_name}:</b> %{{customdata[2]:.2f}}" +
+                                          "<extra></extra>"
+                        )
+                        fig_strip.update_layout(dragmode='pan', xaxis_title="Klaster")
+                        st.plotly_chart(fig_strip, use_container_width=True)
+                    else:
+                        st.warning(f"Kolom yang diperlukan untuk Strip Plot tidak ditemukan di data. (Membutuhkan: {required_cols_strip})")
+
+                #KASUS 3: TIDAK ADA FITUR
+                else: # len(features_run) == 0
+                    st.warning("Pilih setidaknya satu fitur untuk menampilkan visualisasi persebaran klaster.")
+
             else:
-                st.warning("Visualisasi tidak dapat ditampilkan (memerlukan minimal 2 fitur).")
+                 st.warning("Data hasil (X_scaled atau df_result) tidak ditemukan.")
         with col2:
             st.write("**Penjelasan Grafik:**")
             st.info("""
-            Grafik ini adalah representasi 2D dari data Anda. 
-            **Hover** di atas titik untuk melihat nama **Kabupaten/Kota**.
-            """)
+            Grafik ini adalah representasi persebaran data Anda.
+            * **Jika 2+ fitur:** Menampilkan plot PCA 2D.
+            * **Jika 1 fitur:** Menampilkan Strip Plot (1D).
+            **Hover** untuk melihat **Kab/Kota** dan **Klaster**.
+            """) 
+
+    #Scatter plot untuk melihat korelasi
+    st.subheader("Hubungan Pengeluaran Rokok Agregat dengan IPM & Kemiskinan")
+    st.write("Plot ini menunjukkan posisi setiap Kabupaten/Kota berdasarkan pengeluaran rokok total terhadap IPM dan tingkat kemiskinan selama rentang tahun terpilih.")
+    with st.expander("Klik"):
+        df_result_agg = results.get('df_result')
+        start_year_run = results.get('start_year')
+        end_year_run = results.get('end_year')
+        years_run = list(range(start_year_run, end_year_run + 1)) if start_year_run and end_year_run else []
+
+        df_analysis_orig = st.session_state.get('df_analysis')
+        df_tambahan_orig = load_data('dataset_tambahan.csv')
+
+        #Validasi data
+        if df_result_agg is not None and df_analysis_orig is not None and df_tambahan_orig is not None and years_run \
+        and 'Kabupaten/Kota' in df_analysis_orig.columns and 'ROKOK DAN TEMBAKAU' in df_analysis_orig.columns:
+
+            # 1. Filter data asli berdasarkan tahun
+            df_analysis_filtered = df_analysis_orig[df_analysis_orig['Tahun'].isin(years_run)].copy()
+            # 2. Hitung median Rokok Total per Kab/Kota
+            df_rokok_total_agg = df_analysis_filtered.groupby('Kabupaten/Kota', as_index=False)['ROKOK DAN TEMBAKAU'].median()
+            # 3. Filter & Agregasi data tambahan (IPM, Miskin, Provinsi) - Sama seperti sebelumnya
+            df_tambahan_filtered = df_tambahan_orig[df_tambahan_orig['Tahun'].isin(years_run)].copy()
+            agg_socio_dict = {}
+            if 'IPM' in df_tambahan_filtered.columns: agg_socio_dict['IPM'] = 'median'
+            # Pastikan nama kolom kemiskinan benar
+            kemiskinan_col_name = 'Persentase_Miskin'
+            if kemiskinan_col_name in df_tambahan_filtered.columns: agg_socio_dict[kemiskinan_col_name] = 'median'
+            if 'Provinsi' in df_tambahan_filtered.columns: agg_socio_dict['Provinsi'] = 'first'
+
+            if not agg_socio_dict or (kemiskinan_col_name not in agg_socio_dict and 'IPM' not in agg_socio_dict):
+                st.warning("Kolom 'IPM' atau 'Persentase_Miskin' tidak ditemukan di dataset_tambahan.csv.")
+            else:
+                df_socio_agg = df_tambahan_filtered.groupby('Kabupaten/Kota', as_index=False).agg(agg_socio_dict)
+
+                # 4. Gabungkan SEMUA data agregat: Hasil Klaster + Rokok Total + Sosio
+                if 'Kabupaten/Kota' in df_result_agg.columns and 'Kabupaten/Kota' in df_rokok_total_agg.columns and 'Kabupaten/Kota' in df_socio_agg.columns:
+                    features_to_drop = results.get('selected_features_run', []) 
+                    
+                    # Buat daftar kolom yang benar-benar ada di df_result_agg untuk didrop
+                    cols_to_drop_exist = [col for col in features_to_drop if col in df_result_agg.columns]
+                    
+                    if cols_to_drop_exist:
+                        df_result_agg_slim = df_result_agg.drop(columns=cols_to_drop_exist)
+                    else:
+                        df_result_agg_slim = df_result_agg
+                    
+                    # Merge hasil klaster dengan rokok total
+                    df_merged1 = pd.merge(df_result_agg_slim, df_rokok_total_agg, on='Kabupaten/Kota', how='inner')
+                    # Merge hasil gabungan dengan data sosio
+                    df_plot_scatter = pd.merge(df_merged1, df_socio_agg, on='Kabupaten/Kota', how='inner')
+
+                    if df_plot_scatter.empty:
+                        st.warning("Tidak ada data Kabupaten/Kota yang cocok antara hasil klaster, rokok total, dan data IPM/Kemiskinan.")
+                    else:
+                        st.success(f"Data siap untuk plot (ditemukan {len(df_plot_scatter)} Kab/Kota yang cocok).") # Pesan Sukses
+                        col_scatter1, col_scatter2 = st.columns(2)
+
+                        #Plot 1: Rokok vs IPM
+                        with col_scatter1:
+                            if 'IPM' in df_plot_scatter.columns and 'ROKOK DAN TEMBAKAU' in df_plot_scatter.columns:
+                                fig_scatter_ipm = px.scatter(
+                                    df_plot_scatter, x='IPM', y='ROKOK DAN TEMBAKAU',
+                                    color='Cluster_Label', color_discrete_map=master_color_map,
+                                    title='Pengeluaran Rokok vs IPM (Median)',
+                                    custom_data=['Kabupaten/Kota', 'Cluster_Label', 'Provinsi', 'IPM', 'ROKOK DAN TEMBAKAU']
+                                )
+                                fig_scatter_ipm.update_traces(
+                                    hovertemplate="<b>%{customdata[0]}</b><br>Klaster: %{customdata[1]}<br>Provinsi: %{customdata[2]}<br>IPM (Median): %{customdata[3]:.2f}<br>Rokok (Median): %{customdata[4]:,.0f}<extra></extra>"
+                                )
+                                fig_scatter_ipm.update_layout(dragmode='pan', xaxis_title="IPM (Median)", yaxis_title="Pengeluaran Rokok Total (Median)")
+                                st.plotly_chart(fig_scatter_ipm, use_container_width=True)
+                            else:
+                                st.info("Kolom 'IPM' atau 'ROKOK DAN TEMBAKAU' tidak tersedia setelah merge final.") # Pesan error lebih spesifik
+
+                        #Plot 2: Rokok vs Kemiskinan
+                        with col_scatter2:
+                            if kemiskinan_col_name in df_plot_scatter.columns and 'ROKOK DAN TEMBAKAU' in df_plot_scatter.columns:
+                                fig_scatter_miskin = px.scatter(
+                                    df_plot_scatter, x=kemiskinan_col_name, y='ROKOK DAN TEMBAKAU',
+                                    color='Cluster_Label', color_discrete_map=master_color_map,
+                                    title='Pengeluaran Rokok vs Kemiskinan (Median)',
+                                    custom_data=['Kabupaten/Kota', 'Cluster_Label', 'Provinsi', kemiskinan_col_name, 'ROKOK DAN TEMBAKAU']
+                                )
+                                fig_scatter_miskin.update_traces(
+                                    hovertemplate="<b>%{customdata[0]}</b><br>Klaster: %{customdata[1]}<br>Provinsi: %{customdata[2]}<br>Kemiskinan (Median %): %{customdata[3]:.2f}<br>Rokok (Median): %{customdata[4]:,.0f}<extra></extra>"
+                                )
+                                fig_scatter_miskin.update_layout(dragmode='pan', xaxis_title="Persentase Kemiskinan (Median)", yaxis_title="Pengeluaran Rokok Total (Median)")
+                                st.plotly_chart(fig_scatter_miskin, use_container_width=True)
+                            else:
+                                st.info(f"Kolom '{kemiskinan_col_name}' atau 'ROKOK DAN TEMBAKAU' tidak tersedia setelah merge final.") # Pesan error lebih spesifik
+                else:
+                    st.warning("Kolom 'Kabupaten/Kota' tidak ditemukan di salah satu DataFrame agregat untuk digabungkan.")
+
+        elif not years_run:
+            st.warning("Rentang tahun analisis tidak ditemukan.")
+        elif 'ROKOK DAN TEMBAKAU' not in df_analysis_orig.columns:
+            st.warning("Kolom 'ROKOK DAN TEMBAKAU' tidak ditemukan di data analisis utama.")
+        else:
+            st.warning("Data hasil klasterisasi, data analisis utama, atau data tambahan tidak tersedia.")
 
     #Profil Klaster | Box Plot
-    st.write("**Profil Karakteristik Klaster**")
+    st.write("Profil Karakteristik Klaster")
     with st.expander("Klik untuk melihat detail"):
-        # --- Boxplot untuk fitur-fitur Rokok ---
         col1, col2 = st.columns([2, 1])
         with col1:
-            # Gunakan df_final (DataFrame LENGKAP)
             if not df_final.empty:
-                # Memastikan 'Cluster_Label' masuk ke id_vars
-                # Melt dari df_final
                 df_melted_all = df_final.melt(
                     id_vars=['Cluster_Label'],
                     value_vars=features_run,
@@ -858,7 +994,7 @@ if 'df_final' in st.session_state:
             col1_extra, col2_extra = st.columns(2)
             with col1_extra:
                 if 'IPM' in df_final.columns:
-                    fig_ipm_all = px.box(df_final, # <-- Gunakan df_final
+                    fig_ipm_all = px.box(df_final,
                                      x='Cluster_Label',
                                      y='IPM',
                                      color='Cluster_Label',
@@ -872,7 +1008,7 @@ if 'df_final' in st.session_state:
 
             with col2_extra:
                 if 'Persentase_Miskin' in df_final.columns:
-                    fig_pov_all = px.box(df_final, # <-- Gunakan df_final
+                    fig_pov_all = px.box(df_final,
                                      x='Cluster_Label',
                                      y='Persentase_Miskin',
                                      color='Cluster_Label',
@@ -887,7 +1023,7 @@ if 'df_final' in st.session_state:
             st.info("Tidak ada data untuk dianalisis.")
 
     #Peta
-    st.write("**Pemetaan Geografis Hasil Klasterisasi (Folium - Koreksi Warna)**")
+    st.write("Pemetaan Geografis Hasil Klasterisasi (Folium - Koreksi Warna)")
     with st.expander("Klik untuk melihat detail"):
         min_map_year = int(df_final['Tahun'].min())
         max_map_year = int(df_final['Tahun'].max())
@@ -928,7 +1064,7 @@ if 'df_final' in st.session_state:
 
             if peta_indo_gdf is not None:
 
-                # 1. Siapkan data CSV
+                #Siapkan data CSV
                 if 'key_df' not in df_final.columns:
                      df_final['key_df'] = df_final['Kabupaten/Kota'].str.upper()
                 if 'Cluster_Label' not in df_final.columns:
@@ -956,11 +1092,11 @@ if 'df_final' in st.session_state:
                      df_peta['Rokok_str'] = safe_to_str(df_peta['ROKOK DAN TEMBAKAU'])
                      tooltip_fields.append('Rokok_str'); tooltip_aliases.append('Total Pengeluaran Rokok:')
 
-                # 2. Buat Peta Dasar Folium
+                # Buat Peta Dasar Folium
                 map_center = [-2.5, 118.0]
                 m = folium.Map(location=map_center, zoom_start=5, tiles='cartodbpositron')
 
-                # 3. Gabungkan data ke GeoDataFrame
+                #Gabungkan data ke GeoDataFrame
                 merged_gdf = peta_indo_gdf.merge(
                     df_peta,
                     left_on='key_geojson',
@@ -973,8 +1109,7 @@ if 'df_final' in st.session_state:
                     if col not in merged_gdf.columns: merged_gdf[col] = 'N/A'
                     elif '_str' in col: merged_gdf[col] = merged_gdf[col].fillna('N/A')
 
-
-                # 4. Buat Style Function
+                # Buat Style Function
                 def style_function(feature):
                     label = 'Tidak Ada Data'
                     properties = feature.get('properties', {}) 
@@ -990,7 +1125,7 @@ if 'df_final' in st.session_state:
                         'fillOpacity': 0.7 if label != 'Tidak Ada Data' else 0.3
                     }
 
-                # 5. Tambahkan Layer GeoJson dengan Style dan Tooltip
+                #Tambahkan Layer GeoJson dengan Style dan Tooltip
                 try:
                     folium.GeoJson(
                         merged_gdf,
@@ -1016,34 +1151,34 @@ if 'df_final' in st.session_state:
                          <b>Legenda Klaster</b><br style="margin-bottom: 5px;">
                       '''
                     
-                    # 2. Logika sorting
+                    #Logika sorting
                     sorted_items = sorted(master_color_map.items(), key=lambda item: (
                         'Z' if item[0] in ['Tidak Ada Data', 'Noise'] else item[0], item[0]
                     ))
 
-                    # 3. Loop untuk menambahkan baris legenda
+                    #Loop untuk menambahkan baris legenda
                     for label, color in sorted_items:
                         opacity = 0.3 if label == 'Tidak Ada Data' else 0.7
                         
-                        # Tambahkan baris (flexbox)
+                        #Tambahkan baris
                         legend_html += '<div style="display: flex; align-items: center; margin-bottom: 4px;">'
                         
-                        # Tambahkan kotak warna
+                        #Tambahkan kotak warna
                         legend_html += f'<i style="background: {color}; width: 18px; height: 18px; margin-right: 8px; border: 1px solid black; opacity: {opacity};"></i>'
                         
-                        # Tambahkan label teks
+                        #Tambahkan label teks
                         legend_html += f'<span>{label}</span>'
                         
-                        # Tutup baris
+                        #Tutup baris
                         legend_html += '</div>'
                     
-                    # 4. Tutup div utama legenda
+                    #Tutup div utama legenda
                     legend_html += '</div>'
                     
-                    # 5. Tambahkan elemen HTML ke peta
+                    #Tambahkan elemen HTML ke peta
                     m.get_root().html.add_child(folium.Element(legend_html))
 
-                    # 6. Tampilkan di Streamlit
+                    #Tampilkan di Streamlit
                     st_folium(m, width='100%', height=500)
 
                 except Exception as e:
@@ -1055,14 +1190,13 @@ if 'df_final' in st.session_state:
                 st.error("Gagal memuat/memproses file GeoJSON untuk Folium.")
                 
     #Perkembangan Pengeluaran Rokok
-    st.write("**Perkembangan Rata-rata Total Pengeluaran Rokok per Klaster**")
+    st.write("Perkembangan Rata-rata Total Pengeluaran Rokok per Klaster")
     with st.expander("Klik untuk melihat detail"):
         col1, col2 = st.columns([2, 1])
         with col1:
             if 'ROKOK DAN TEMBAKAU' in df_final.columns:
                 df_no_noise = df_final[df_final['Cluster'] != -1]
                 if not df_no_noise.empty:
-                    # Group by pakai 'Cluster_Label'
                     avg_expenditure = df_no_noise.groupby(['Cluster_Label', 'Tahun'])['ROKOK DAN TEMBAKAU'].mean().reset_index()
                     
                     fig_line = px.line(avg_expenditure,
@@ -1088,7 +1222,6 @@ if 'df_final' in st.session_state:
 
     st.write("Tren Tahunan per Daerah")
     with st.expander("Klik untuk melihat detail"):
-        # Memastikan df_final ada sebelum membuat selectbox
         st.write("Pilih satu Kabupaten/Kota untuk melihat perkembangan pengeluaran rokok, IPM, dan tingkat kemiskinan dari tahun ke tahun.")
         if 'df_final' in st.session_state and df_final is not None:
             # 1. Buat daftar daerah unik untuk pilihan
@@ -1115,7 +1248,7 @@ if 'df_final' in st.session_state:
                         st.warning(f"Tidak ditemukan data untuk {selected_daerah} pada rentang tahun terpilih.")
                     else:
                         # Ambil label klaster (semua tahun sama untuk daerah ini)
-                        # Memastikan ada data sebelum mengambil iloc[0]
+                        # Memastikan ada data
                         if not df_daerah.empty:
                             daerah_cluster_label = df_daerah['Cluster_Label'].iloc[0]
                             # Ambil warna dari master map, default abu-abu jika tidak ada
@@ -1168,7 +1301,7 @@ if 'df_final' in st.session_state:
                                                 f"<b>Kab/Kota:</b> %{{customdata[2]}}<br>" +
                                                 f"<b>Tahun:</b> %{{x}}<br>" +
                                                 f"<b>{hover_label_fitur}</b> %{{y:,.2f}}" +
-                                                "<extra></extra>" # Sembunyikan info trace tambahan
+                                                "<extra></extra>"
                                         )
 
                                         fig_line_daerah.update_layout(
@@ -1202,9 +1335,8 @@ if 'df_final' in st.session_state:
                         
                         if 'Provinsi' not in top_10_df.columns:
                                 st.warning("Kolom 'Provinsi' tidak ditemukan untuk hover.")
-                                hover_cols = {feature: ':.2f'} # Data hover default
+                                hover_cols = {feature: ':.2f'}
                         else:
-                                # Data hover termasuk Provinsi
                                 hover_cols = {'Provinsi': True, feature: ':.2f'}
 
                         fig_bar_top10 = px.bar(
@@ -1221,5 +1353,6 @@ if 'df_final' in st.session_state:
                         fig_bar_top10.update_layout(xaxis_title="Kabupaten/Kota", yaxis_title="Nilai Pengeluaran", dragmode='pan')
                         st.plotly_chart(fig_bar_top10, use_container_width=True)
 
+    
 
         

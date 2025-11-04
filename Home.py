@@ -2,16 +2,12 @@ import streamlit as st
 import pandas as pd
 import io
 
-# --- KONFIGURASI HALAMAN ---
-# Mengatur judul tab browser, ikon, dan layout halaman
 st.set_page_config(
     page_title="Klasterisasi Pola Rokok",
     page_icon="🚬",
     layout="wide"
 )
 
-# --- FUNGSI BANTU ---
-# Fungsi untuk mengubah DataFrame menjadi CSV (dengan cache agar lebih efisien)
 @st.cache_data
 def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
@@ -26,13 +22,8 @@ def to_excel(df):
 
 with st.sidebar:
     st.title("Dashboard Klasterisasi")
-# --- HALAMAN UTAMA ---
 
-# Menampilkan judul utama
 st.title("Clustering Pola Pengeluaran Rokok dan Tembakau di Indonesia")
-
-
-# Menampilkan paragraf pengantar
 st.info("""Selamat datang di Dashboard Analisis Pola Pengeluaran Rokok dan Tembakau.
         Aplikasi ini dirancang untuk membantu Anda memahami keragaman pola konsumsi rokok di seluruh kabupaten/kota di Indonesia melalui pendekatan klasterisasi K-Means.
         """)
@@ -44,9 +35,11 @@ with col1:
 with col2:
     st.write("`Dataset sudah tersedia`") 
     st.write("Syarat Dataset yang digunakan jika ingin memakai dataset pribadi: " 
-    "\n 1. File bertipe .csv" 
+    "\n 1. File bertipe .csv / .xlxs" 
     "\n 2. File berisi seluruh kabupaten/kota di Indonesia" 
-    "\n 3. Tidak ada duplikat")
+    "\n 3. Tidak ada duplikat"
+    "\n 4. Kolom pada file sesuai dengan template"
+    "\n (Kolom `ROKOK DAN TEMBAKAU` adalah nilai total dari seluruh jenis rokok yang ada)")
 
 with col3:
     st.write("Template File Dataset")
@@ -92,24 +85,22 @@ with col3:
     </a>
     """, unsafe_allow_html=True)
 
-st.markdown("---") # Membuat garis pemisah
+st.markdown("---")
 st.header("TUTORIAL PEMAKAIAN WEB 📖")
 st.write("🌟 Lihat `MANUAL BOOK` untuk memahami lebih dalam mengenai website dan pengertian setiap atribut pada web 🌟")
-st.write("1. Pergi ke halaman `Eksperimen` untuk memulai proses klasterisasi")
+st.write("1. Pergi ke halaman `Klasterisasi` untuk memulai proses klasterisasi")
 st.write("2. Input Dataset atau gunakan Dataset bawaan bila tidak memiliki Dataset")
 st.write("3. Input parameter yang tersedia sesuai dengan keingingan anda pada area `Pengaturan Analisis`")
 st.image("assets/step2.png", width=600)
 
-st.markdown("---") # Membuat garis pemisah
+st.markdown("---")
 st.subheader("Untuk K-Means dan K-Means++")
 st.write("4. Klik tombol `cari rekomendasi nilai K` seperti di gambar untuk mencari jumlah kelompok paling optimal")
 st.image("assets/k_means3.png", width=200)
 st.write("5. Setelah proses selesai slider akan muncul. Pilih nilai `K` dengan menggeser slider tersebut.")
 st.write("6. Klik tombol `Klasterisasi` untuk memulai proses pengelompokan dan hasil akan muncul")
 
-st.markdown("---") # Membuat garis pemisah
+st.markdown("---")
 st.subheader("Untuk OPTICS")
 st.write("4. Tentukan jumlah `sampel minimum` yang ingin digunakan untuk klasterisasi data")
 st.write("5. Klik tombol `Klasterisasi` untuk memulai proses pengelompokan dan hasil akan muncul")
-
-st.subheader("Jika anda bingung dalam menentukan nilai `K` ataupun `sampel minimum` hover tombol ❓ yang akan memberikan cara menentukan-nya")
