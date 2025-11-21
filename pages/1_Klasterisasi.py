@@ -911,9 +911,9 @@ if data_is_valid and temp_df_analysis is not None:
             
             with st.spinner(f'Melakukan analisis untuk: {", ".join(algo_choices)}...'):
                 
-                # 1. Agregasi Data (Satu Kali)
+                # 1. Agregasi Data
                 df_filtered = df_to_process[df_to_process['Tahun'].isin(selected_years)].copy()
-                st.write("Mengagregasi data (median)...")
+                st.write("Melakukan analisis...")
                 features_to_agg = selected_features
                 agg_dict = {feat: 'median' for feat in features_to_agg}
                 if 'Provinsi' in df_filtered.columns: agg_dict['Provinsi'] = 'first' # Ambil Provinsi
