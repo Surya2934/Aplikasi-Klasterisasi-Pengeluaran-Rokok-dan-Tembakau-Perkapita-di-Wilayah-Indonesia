@@ -830,7 +830,7 @@ if data_is_valid and temp_df_analysis is not None:
             if selected_features:
                 with st.spinner('Mengevaluasi K dari 2-10 pada data agregat...'):
                     df_filtered_eval_raw = df_rokok_eval[df_rokok_eval['Tahun'].isin(selected_years)].copy()
-                    st.write("Mengagregasi data evaluasi (median)...")
+                    st.write("Menjalankan proses klasterisasi...")
                     features_to_agg_eval = selected_features
                     df_aggregated_eval = df_filtered_eval_raw.groupby('Kabupaten/Kota', as_index=False)[features_to_agg_eval].median()
                     df_aggregated_eval[features_to_agg_eval] = df_aggregated_eval[features_to_agg_eval].fillna(0)
