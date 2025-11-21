@@ -33,51 +33,69 @@ def clear_analysis_results():
             del st.session_state[key]
     # st.toast("Sumber data diubah, hasil analisis sebelumnya dibersihkan.")
 
-# --- FUNGSI-FUNGSI UTAMA ---
 @st.cache_data
 def load_data(file_path):
-    df = None # Inisialisasi df
-    is_uploaded_file = hasattr(file_path, 'seek') # Cek apakah ini file unggahan
+    df = None
+    is_uploaded_file = hasattr(file_path, 'seek')
+    REQUIRED_COLS_CHECK = ['Kabupaten/Kota', 'Tahun'] # Cek minimal 2 kolom ini
 
     try:
-        #1. Handle File Unggahan
+        # 1. Handle File Unggahan
         if is_uploaded_file:
             filename = file_path.name.lower()
-            file_path.seek(0) 
-
-            if filename.endswith('.xlsx'):
+            file_path.seek(0)
+            
+            #Baca sebagai Excel (Khusus untuk .xlsx atau .xls)
+            if filename.endswith('.xlsx') or filename.endswith('.xls'):
                 try:
                     df = pd.read_excel(file_path, engine='openpyxl')
-                    st.info("Membaca file sebagai Excel (.xlsx).")
-                except Exception as e_excel:
-                    st.error(f"Gagal membaca file '{filename}' sebagai Excel. Error: {e_excel}")
+                    
+                    if all(col in df.columns for col in REQUIRED_COLS_CHECK):
+                        st.info("Berhasil membaca data (upload) sebagai Excel (.xlsx/.xls).")
+                        return df
+                    
+                    # Jika berhasil dibaca Excel tapi kolom kunci hilang (berarti datanya rusak), coba CSV
+                    df = None
                     file_path.seek(0)
-                    pass # coba CSV
-            
-            # Jika bukan Excel atau Excel gagal, coba CSV
-            if df is None and (filename.endswith('.csv') or not filename.endswith('.xlsx')):
-                # Untuk file UPLOAD, coba Semicolon (;) dulu
-                try: 
-                    df = pd.read_csv(file_path, delimiter=';')
-                    st.success("Berhasil membaca CSV (upload) dengan pemisah ';'.")
                 except Exception:
-                    file_path.seek(0) 
-                    try: # Fallback ke Koma (,)
-                        df = pd.read_csv(file_path, delimiter=',') 
-                        st.success("Berhasil membaca CSV (upload) dengan pemisah ','.")
-                    except Exception as e_comma:
-                        st.error(f"Gagal membaca file CSV (upload) dengan ';' atau ','. Error: {e_comma}")
-                        return None 
+                    # Gagal membaca sebagai Excel, lanjut ke upaya CSV
+                    file_path.seek(0)
+                    pass 
+            
+            # Urutan prioritas delimiter: (Semicolon, Comma, Tab)
+            delimiters_to_try = [';', ',', '\t'] 
+            
+            for delimiter in delimiters_to_try:
+                file_path.seek(0) # Reset pointer file sebelum setiap percobaan
+                try: 
+                    # Mencoba membaca sebagai CSV
+                    df = pd.read_csv(file_path, delimiter=delimiter)
+                    
+                    # Cek VALIDASI: Cek apakah kolom kunci terbaca
+                    if all(col in df.columns for col in REQUIRED_COLS_CHECK):
+                        delimiter_display = delimiter.replace('\t', 'tab')
+                        st.success(f"Berhasil membaca data (upload) dengan pemisah '{delimiter_display}'.")
+                        break
+                    
+                    df = None # Jika berhasil dibaca CSV tapi kolom kunci hilang, coba pemisah berikutnya
+                    
+                except Exception:
+                    continue # Lanjut ke pemisah berikutnya
+            
+            # Jika kedua tahap (Excel dan CSV) gagal
+            if df is None:
+                st.error(f"Gagal membaca file '{filename}' baik sebagai Excel maupun CSV. Pastikan format file benar.")
+                return None
 
-        # --- 2. Handle File Path (Dataset Bawaan) ---
+        #Handle File Path (Dataset Bawaan)
         else: 
             filename = str(file_path).lower()
             if filename.endswith('.csv'):
                  try:
-                    df = pd.read_csv(filename, delimiter=',') # Coba Koma dulu (standar)
+                    df = pd.read_csv(filename, delimiter=',')
                  except Exception:
                      try:
-                        df = pd.read_csv(filename, delimiter=';') # Fallback ke Semicolon
+                        df = pd.read_csv(filename, delimiter=';')
                      except Exception as e_csv:
                         return None
             elif filename.endswith('.xlsx'):
@@ -87,7 +105,7 @@ def load_data(file_path):
                     st.error(f"Gagal membaca file '{filename}' sebagai Excel. Error: {e_excel}")
                     return None
             else:
-                 st.error(f"Format file bawaan '{filename}' tidak didukung.")
+                 st.error(f"Format file bawaan '{file_path}' tidak didukung.")
                  return None
 
         #3. Post-processing
@@ -105,7 +123,7 @@ def load_data(file_path):
     except Exception as e:
         st.error(f"Error: Gagal memproses file. Detail: {e}")
         return None
-
+    
 @st.cache_data
 def load_geodata(file_path):
     try:
